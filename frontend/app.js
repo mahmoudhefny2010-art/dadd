@@ -23,6 +23,8 @@ const AUTO_LOGIN_EMAILS = [
     'mahmoud.dad@example.com'
 ];
 
+const DEFAULT_PATIENT_NAME = 'Mohamed Hefny';
+
 // ========== INITIALIZATION ==========
 document.addEventListener('DOMContentLoaded', () => {
     // Check if user is already logged in
@@ -351,9 +353,23 @@ async function loadPatients() {
             option.textContent = patient.name + (patient.age ? ` (${patient.age}y)` : '');
             select.appendChild(option);
         });
+
+        if (!currentPatientId) {
+            autoSelectDefaultPatient(patients, select);
+        }
     } catch (error) {
         console.error('Error loading patients:', error);
     }
+}
+
+function autoSelectDefaultPatient(patients, select) {
+    if (!patients || patients.length === 0) return;
+    const normalizedDefault = DEFAULT_PATIENT_NAME.trim().toLowerCase();
+    const match = patients.find(patient => patient.name?.trim().toLowerCase() === normalizedDefault);
+    if (!match) return;
+
+    select.value = match._id;
+    selectPatient({ target: select });
 }
 
 async function selectPatient(e) {
