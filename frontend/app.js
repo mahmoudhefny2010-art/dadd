@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadSavedCredentials();
     autoLoginIfEligible();
+    initializeMobileChrome();
 
     setupEventListeners();
 });
@@ -90,6 +91,11 @@ function setupEventListeners() {
     document.getElementById('medicationStopForm').addEventListener('submit', stopMedication);
     document.getElementById('medicationReplaceForm').addEventListener('submit', replaceMedication);
     document.getElementById('medicationChecklistForm').addEventListener('submit', addMedicationChecklistEntry);
+
+    const mobileToggle = document.getElementById('mobileChromeToggle');
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', toggleMobileChrome);
+    }
 }
 
 // ========== AUTHENTICATION ==========
@@ -245,6 +251,29 @@ async function autoLoginIfEligible() {
     } catch (error) {
         console.error('Auto-login failed:', error);
     }
+}
+
+function initializeMobileChrome() {
+    const showChrome = localStorage.getItem('showMobileChrome') === 'true';
+    if (showChrome) {
+        document.body.classList.add('show-mobile-chrome');
+    }
+    updateMobileToggleState();
+}
+
+function toggleMobileChrome() {
+    document.body.classList.toggle('show-mobile-chrome');
+    const isShown = document.body.classList.contains('show-mobile-chrome');
+    localStorage.setItem('showMobileChrome', String(isShown));
+    updateMobileToggleState();
+}
+
+function updateMobileToggleState() {
+    const toggle = document.getElementById('mobileChromeToggle');
+    if (!toggle) return;
+    const isShown = document.body.classList.contains('show-mobile-chrome');
+    toggle.setAttribute('aria-expanded', String(isShown));
+    toggle.textContent = isShown ? '✕ Close' : '☰ Menu';
 }
 
 // ========== UI STATE MANAGEMENT ==========
