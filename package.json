@@ -1,19 +1,13 @@
 {
-  "name": "dad-medical-tracker-backend",
+  "name": "dad-medical-tracker",
   "version": "1.0.0",
-  "description": "Medical tracking system for coordinated care",
-  "main": "server.js",
+  "description": "Medical tracking system for coordinated care across shifts",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "install-all": "cd backend && npm install && cd ../frontend && echo 'Frontend ready'",
+    "start-backend": "cd backend && npm start",
+    "dev-backend": "cd backend && npm run dev",
+    "setup": "cd backend && npm install"
   },
-  "keywords": [
-    "medical",
-    "tracking",
-    "health"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -22,8 +16,5 @@
     "express-validator": "^7.0.0",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.22"
   }
 }
