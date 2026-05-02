@@ -15,6 +15,14 @@ let authToken = null;
 let selectedMedicationId = null;
 let medicationCache = [];
 
+const AUTO_LOGIN_EMAILS = [
+    'menna.dad@example.com',
+    'manar.dad@example.com',
+    'mariam.dad@example.com',
+    'hoda.dad@example.com',
+    'mahmoud.dad@example.com'
+];
+
 // ========== INITIALIZATION ==========
 document.addEventListener('DOMContentLoaded', () => {
     // Check if user is already logged in
@@ -25,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadSavedCredentials();
+    autoLoginIfEligible();
 
     setupEventListeners();
 });
@@ -203,6 +212,38 @@ function loadSavedCredentials() {
     if (savedPassword) {
         const signInPassword = document.getElementById('signInPassword');
         if (signInPassword) signInPassword.value = savedPassword;
+    }
+}
+
+async function autoLoginIfEligible() {
+    if (authToken) return;
+    const savedEmail = localStorage.getItem('savedEmail');
+    const savedPassword = localStorage.getItem('savedPassword');
+    if (!savedEmail || !savedPassword) return;
+    if (!AUTO_LOGIN_EMAILS.includes(savedEmail)) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: savedEmail, password: savedPassword })
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+        authToken = data.token;
+        currentUser = data.user;
+
+        localStorage.setItem('authToken', authToken);
+        localStorage.setItem('user', JSON.stringify(currentUser));
+
+        showAppScreen();
+        loadPatients();
+    } catch (error) {
+        console.error('Auto-login failed:', error);
     }
 }
 
