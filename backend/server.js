@@ -26,6 +26,7 @@ app.use('/api/medications', authenticateToken, require('./routes/medications'));
 app.use('/api/questions', authenticateToken, require('./routes/questions'));
 app.use('/api/intakes', authenticateToken, require('./routes/intakes'));
 app.use('/api/audit', authenticateToken, require('./routes/audit'));
+app.use('/api/shifts', authenticateToken, require('./routes/shifts'));
 
 // Serve frontend
 const frontendPath = path.join(__dirname, '..', 'frontend');
