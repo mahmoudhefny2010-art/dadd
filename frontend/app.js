@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeMobileChrome();
     initializeOfflineMode();
     initializeDictation();
+    initializeTimeSelects();
+    initializeSchedulePickers();
 
     setupEventListeners();
 });
@@ -793,7 +795,7 @@ async function saveQuestion(e) {
         category: document.getElementById('questionCategory').value,
         priority: document.getElementById('questionPriority').value,
         status: 'pending',
-        askedDate: getDateValueOrNow(document.getElementById('questionDate').value),
+        askedDate: getDateTimeFromInputs('questionDate', 'questionTime'),
         createdBy: currentUser.id
     };
 
@@ -872,7 +874,7 @@ function openQuestionEditModal(questionId) {
     const question = questionsCache.find(item => item._id === questionId);
     if (!question) return;
     editingQuestionId = questionId;
-    document.getElementById('editQuestionDate').value = toDatetimeLocal(question.askedDate || question.createdAt);
+    setDateTimeInputs('editQuestionDate', 'editQuestionTime', question.askedDate || question.createdAt);
     document.getElementById('editQuestionText').value = question.question || '';
     document.getElementById('editQuestionCategory').value = question.category || '';
     document.getElementById('editQuestionPriority').value = question.priority || 'medium';
@@ -886,7 +888,7 @@ async function saveQuestionEdits(e) {
     if (!editingQuestionId) return;
 
     const updateData = {
-        askedDate: getDateValueOrNow(document.getElementById('editQuestionDate').value),
+        askedDate: getDateTimeFromInputs('editQuestionDate', 'editQuestionTime'),
         question: document.getElementById('editQuestionText').value,
         category: document.getElementById('editQuestionCategory').value,
         priority: document.getElementById('editQuestionPriority').value,
@@ -933,7 +935,7 @@ async function saveObservation(e) {
 
     const observationData = {
         patientId: currentPatientId,
-        timestamp: getDateValueOrNow(document.getElementById('observationDate').value),
+        timestamp: getDateTimeFromInputs('observationDate', 'observationTime'),
         vitals: {
             bloodSugar: document.getElementById('bloodSugar').value ? { value: parseFloat(document.getElementById('bloodSugar').value) } : null,
             bloodPressure: (document.getElementById('bpSystolic').value || document.getElementById('bpDiastolic').value) ? {
@@ -1025,7 +1027,7 @@ function openObservationEditModal(observationId) {
     const observation = observationsCache.find(item => item._id === observationId);
     if (!observation) return;
     editingObservationId = observationId;
-    document.getElementById('editObservationDate').value = toDatetimeLocal(observation.timestamp || observation.createdAt);
+    setDateTimeInputs('editObservationDate', 'editObservationTime', observation.timestamp || observation.createdAt);
     document.getElementById('editBloodSugar').value = observation.vitals?.bloodSugar?.value || '';
     document.getElementById('editBpSystolic').value = observation.vitals?.bloodPressure?.systolic || '';
     document.getElementById('editBpDiastolic').value = observation.vitals?.bloodPressure?.diastolic || '';
@@ -1041,7 +1043,7 @@ async function saveObservationEdits(e) {
     if (!editingObservationId) return;
 
     const updateData = {
-        timestamp: getDateValueOrNow(document.getElementById('editObservationDate').value),
+        timestamp: getDateTimeFromInputs('editObservationDate', 'editObservationTime'),
         vitals: {
             bloodSugar: document.getElementById('editBloodSugar').value ? { value: parseFloat(document.getElementById('editBloodSugar').value) } : null,
             bloodPressure: (document.getElementById('editBpSystolic').value || document.getElementById('editBpDiastolic').value) ? {
@@ -1102,8 +1104,8 @@ async function saveMedication(e) {
         },
         frequency: document.getElementById('medFrequency').value,
         purpose: document.getElementById('medPurpose').value,
-        schedule: parseScheduleInput(document.getElementById('medSchedule').value),
-        startDate: getDateValueOrNow(document.getElementById('medStartDate').value),
+        schedule: getScheduleFromPicker('medSchedule'),
+        startDate: getDateTimeFromInputs('medStartDate', 'medStartTime'),
         createdBy: currentUser.id
     };
 
@@ -1114,6 +1116,7 @@ async function saveMedication(e) {
             body: medicationData,
             onSuccess: () => {
                 document.getElementById('medicationForm').reset();
+                resetSchedulePicker('medSchedule');
                 loadMedications();
             }
         });
@@ -1131,9 +1134,17 @@ async function loadMedications() {
         });
         const medications = await response.json();
         medicationCache = medications;
+        const sortedMedications = [...medications].sort((first, second) => {
+            const firstNext = getNextDoseDateForMedication(first);
+            const secondNext = getNextDoseDateForMedication(second);
+            if (!firstNext && !secondNext) return 0;
+            if (!firstNext) return 1;
+            if (!secondNext) return -1;
+            return firstNext - secondNext;
+        });
 
         const container = document.getElementById('medicationsList');
-        if (medications.length === 0) {
+        if (sortedMedications.length === 0) {
             container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💊</div><p>No medications recorded</p></div>';
             selectedMedicationId = null;
             updateMedicationActionState();
@@ -1141,32 +1152,36 @@ async function loadMedications() {
             return;
         }
 
-        container.innerHTML = medications.map(med => `
-            <div class="list-item medication-item ${selectedMedicationId === med._id ? 'selected' : ''}" data-med-id="${med._id}">
-                <div class="list-item-header">
-                    <div>
-                        <div class="list-item-title">${med.name}</div>
-                        <div class="list-item-meta">
-                            <span>Status: <span class="status-pill status-${med.status}">${med.status}</span></span>
-                            <span>Type: ${med.type.toUpperCase()}</span>
+        container.innerHTML = `
+            <div class="medication-table">
+                <div class="medication-header">
+                    <span>Name</span>
+                    <span>Status</span>
+                    <span>Type</span>
+                    <span>Dosage</span>
+                    <span>Frequency</span>
+                    <span>Schedule</span>
+                    <span>Updated</span>
+                    <span></span>
+                </div>
+                ${sortedMedications.map(med => `
+                    <div class="medication-row medication-item ${selectedMedicationId === med._id ? 'selected' : ''}" data-med-id="${med._id}">
+                        <span class="med-name" data-label="Name">${med.name}</span>
+                        <span data-label="Status"><span class="status-pill status-${med.status}">${med.status}</span></span>
+                        <span data-label="Type">${med.type.toUpperCase()}</span>
+                        <span data-label="Dosage">${med.dosage?.amount || 'N/A'} ${med.dosage?.unit || ''}</span>
+                        <span data-label="Frequency">${med.frequency || 'Not set'}</span>
+                        <span data-label="Schedule">${formatScheduleTimes(med.schedule)}</span>
+                        <span data-label="Updated">${formatDate(med.updatedAt || med.createdAt)}</span>
+                        <span data-label="Action"><button class="btn-tertiary select-medication-btn" type="button">Select</button></span>
+                        <div class="medication-meta">
+                            <span>Created by ${formatUserName(med.createdBy)} · ${formatDate(med.createdAt)}</span>
+                            <span>Updated by ${formatUserName(med.updatedBy || med.createdBy)} · ${formatDate(med.updatedAt || med.createdAt)}</span>
                         </div>
                     </div>
-                    <button class="btn-tertiary select-medication-btn" type="button">Select</button>
-                </div>
-                <div class="list-item-body">
-                    <p><strong>Dosage:</strong> ${med.dosage?.amount || 'N/A'} ${med.dosage?.unit || ''}</p>
-                    <p><strong>Frequency:</strong> ${med.frequency || 'Not set'}</p>
-                    ${med.purpose ? `<p><strong>Purpose:</strong> ${med.purpose}</p>` : ''}
-                    ${med.notes ? `<p><strong>Notes:</strong> ${med.notes}</p>` : ''}
-                </div>
-                <div class="list-item-footer">
-                    <div class="item-meta-lines">
-                        <span>Created by ${formatUserName(med.createdBy)} · ${formatDate(med.createdAt)}</span>
-                        <span>Updated by ${formatUserName(med.updatedBy || med.createdBy)} · ${formatDate(med.updatedAt || med.createdAt)}</span>
-                    </div>
-                </div>
+                `).join('')}
             </div>
-        `).join('');
+        `;
 
         if (!medications.some(med => med._id === selectedMedicationId)) {
             selectedMedicationId = null;
@@ -1312,12 +1327,12 @@ function openEditMedicationModal() {
     if (!selected) return;
     document.getElementById('editMedName').value = selected.name || '';
     document.getElementById('editMedType').value = selected.type || '';
-    document.getElementById('editMedStartDate').value = toDatetimeLocal(selected.startDate || selected.createdAt);
+    setDateTimeInputs('editMedStartDate', 'editMedStartTime', selected.startDate || selected.createdAt);
     document.getElementById('editMedAmount').value = selected.dosage?.amount || '';
     document.getElementById('editMedUnit').value = selected.dosage?.unit || '';
     document.getElementById('editMedFrequency').value = selected.frequency || '';
     document.getElementById('editMedPurpose').value = selected.purpose || '';
-    document.getElementById('editMedSchedule').value = (selected.schedule || []).join(', ');
+    setSchedulePickerValues('editMedSchedule', selected.schedule || []);
     document.getElementById('editMedStatus').value = selected.status || 'active';
     document.getElementById('editMedNotes').value = selected.notes || '';
     openModal('medicationEditModal');
@@ -1325,26 +1340,22 @@ function openEditMedicationModal() {
 
 function openStopMedicationModal() {
     if (!getSelectedMedication()) return;
-    document.getElementById('stopMedDate').value = getNowDatetimeLocal();
+    setDateTimeInputs('stopMedDate', 'stopMedTime', new Date());
     openModal('medicationStopModal');
 }
 
 function openReplaceMedicationModal() {
-    if (!getSelectedMedication()) return;
-    document.getElementById('replaceMedDate').value = getNowDatetimeLocal();
+    const selected = getSelectedMedication();
+    if (!selected) return;
+    setSchedulePickerValues('replaceMedSchedule', selected.schedule || []);
+    setDateTimeInputs('replaceMedDate', 'replaceMedTime', new Date());
     openModal('medicationReplaceModal');
 }
 
 function openChecklistMedicationModal() {
     if (!getSelectedMedication()) return;
-    document.getElementById('checklistMedDate').value = getNowDatetimeLocal();
+    setDateTimeInputs('checklistMedDate', 'checklistMedTime', new Date());
     openModal('medicationChecklistModal');
-}
-
-function getNowDatetimeLocal() {
-    const now = new Date();
-    const pad = value => String(value).padStart(2, '0');
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 async function saveMedicationEdits(e) {
@@ -1355,14 +1366,14 @@ async function saveMedicationEdits(e) {
     const updateData = {
         name: document.getElementById('editMedName').value,
         type: document.getElementById('editMedType').value,
-        startDate: getDateValueOrNow(document.getElementById('editMedStartDate').value),
+        startDate: getDateTimeFromInputs('editMedStartDate', 'editMedStartTime'),
         dosage: {
             amount: parseFloat(document.getElementById('editMedAmount').value),
             unit: document.getElementById('editMedUnit').value
         },
         frequency: document.getElementById('editMedFrequency').value,
         purpose: document.getElementById('editMedPurpose').value,
-        schedule: parseScheduleInput(document.getElementById('editMedSchedule').value),
+        schedule: getScheduleFromPicker('editMedSchedule'),
         status: document.getElementById('editMedStatus').value,
         notes: document.getElementById('editMedNotes').value,
         changeReason: document.getElementById('editMedReason').value
@@ -1396,7 +1407,7 @@ async function stopMedication(e) {
             url: `${API_BASE}/medications/${selected._id}/stop`,
             method: 'POST',
             body: {
-                endDate: dateValue ? new Date(dateValue) : new Date(),
+                endDate: getDateTimeFromInputs('stopMedDate', 'stopMedTime'),
                 reason
             },
             onSuccess: () => {
@@ -1414,7 +1425,7 @@ async function replaceMedication(e) {
     const selected = getSelectedMedication();
     if (!selected) return;
 
-    const replacementDate = document.getElementById('replaceMedDate').value;
+    const replacementDate = getDateTimeFromInputs('replaceMedDate', 'replaceMedTime');
     const newMedicationName = document.getElementById('replaceMedName').value;
 
     const newMedicationData = {
@@ -1426,7 +1437,7 @@ async function replaceMedication(e) {
         },
         frequency: document.getElementById('replaceMedFrequency').value,
         purpose: document.getElementById('replaceMedPurpose').value,
-        schedule: parseScheduleInput(document.getElementById('replaceMedSchedule').value),
+        schedule: getScheduleFromPicker('replaceMedSchedule'),
         notes: document.getElementById('replaceMedNotes').value
     };
 
@@ -1435,7 +1446,7 @@ async function replaceMedication(e) {
             url: `${API_BASE}/medications/${selected._id}/replace`,
             method: 'POST',
             body: {
-                replacementDate: replacementDate ? new Date(replacementDate) : new Date(),
+                replacementDate,
                 newMedicationName,
                 newMedicationData,
                 reason: document.getElementById('replaceMedReason').value
@@ -1459,12 +1470,8 @@ async function addMedicationChecklistEntry(e) {
     const taken = document.getElementById('checklistMedTaken').checked;
     const notes = document.getElementById('checklistMedNotes').value;
 
-    let date = new Date();
-    let time = new Date().toLocaleTimeString();
-    if (dateValue) {
-        date = new Date(dateValue);
-        time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
+    const date = getDateTimeFromInputs('checklistMedDate', 'checklistMedTime');
+    const time = formatTimeFromDate(date);
 
     try {
         await submitChecklistEntry(selected._id, { date, time, taken, notes }, () => {
@@ -1511,8 +1518,8 @@ function renderMedicationReminders(medications, containerId = 'medicationReminde
                 <div>
                     <div class="list-item-title">${reminder.name}</div>
                     <div class="list-item-meta">
-                        <span>Date: ${new Date().toLocaleDateString()}</span>
-                        <span>Time: ${reminder.time}</span>
+                        <span>Date: ${formatDateOnly(new Date())}</span>
+                        <span>Time: ${formatTimeFromString(reminder.time)}</span>
                         <span class="status-pill status-${reminder.status}">${reminder.status === 'pending' ? 'not yet' : reminder.status}</span>
                     </div>
                 </div>
@@ -1556,8 +1563,8 @@ function renderNextMedication(medications) {
                 <div>
                     <div class="list-item-title">${nextDose.name}</div>
                     <div class="list-item-meta">
-                        <span>Date: ${nextDose.date.toLocaleDateString()}</span>
-                        <span>Time: ${nextDose.time}</span>
+                        <span>Date: ${formatDateOnly(nextDose.date)}</span>
+                        <span>Time: ${formatTimeFromString(nextDose.time)}</span>
                         <span class="status-pill status-${nextDose.status}">${statusLabel}</span>
                     </div>
                 </div>
@@ -1630,7 +1637,7 @@ async function saveIntake(e) {
 
     const intakeData = {
         patientId: currentPatientId,
-        date: document.getElementById('intakeDate').value ? new Date(document.getElementById('intakeDate').value) : new Date(),
+        date: getDateTimeFromInputs('intakeDate', 'intakeTime'),
         water: {
             amount: parseInt(document.getElementById('waterAmount').value) || null
         },
@@ -1908,7 +1915,7 @@ function openIntakeEditModal(intakeId) {
     const intake = intakesCache.find(item => item._id === intakeId);
     if (!intake) return;
     editingIntakeId = intakeId;
-    document.getElementById('editIntakeDate').value = toDatetimeLocal(intake.date);
+    setDateTimeInputs('editIntakeDate', 'editIntakeTime', intake.date);
     document.getElementById('editWaterAmount').value = intake.water?.amount || '';
     document.getElementById('editFoodDesc').value = intake.food?.description || '';
     document.getElementById('editUrineOutput').value = intake.urineOutput?.amount?.value || '';
@@ -1922,7 +1929,7 @@ async function saveIntakeEdits(e) {
     if (!editingIntakeId) return;
 
     const updateData = {
-        date: document.getElementById('editIntakeDate').value ? new Date(document.getElementById('editIntakeDate').value) : new Date(),
+        date: getDateTimeFromInputs('editIntakeDate', 'editIntakeTime'),
         water: {
             amount: parseInt(document.getElementById('editWaterAmount').value) || null
         },
@@ -1978,8 +1985,8 @@ async function saveShift(e) {
         patientId: currentPatientId,
         staffName: document.getElementById('shiftStaffName').value,
         role: document.getElementById('shiftRole').value,
-        shiftStart: document.getElementById('shiftStart').value ? new Date(document.getElementById('shiftStart').value) : null,
-        shiftEnd: document.getElementById('shiftEnd').value ? new Date(document.getElementById('shiftEnd').value) : null,
+        shiftStart: getDateTimeFromInputs('shiftStartDate', 'shiftStartTime'),
+        shiftEnd: getDateTimeFromInputs('shiftEndDate', 'shiftEndTime'),
         notes: document.getElementById('shiftNotes').value,
         createdBy: currentUser.id
     };
@@ -2063,8 +2070,8 @@ function openShiftEditModal(shiftId) {
     editingShiftId = shiftId;
     document.getElementById('editShiftStaffName').value = shift.staffName || '';
     document.getElementById('editShiftRole').value = shift.role || 'doctor';
-    document.getElementById('editShiftStart').value = toDatetimeLocal(shift.shiftStart);
-    document.getElementById('editShiftEnd').value = toDatetimeLocal(shift.shiftEnd);
+    setDateTimeInputs('editShiftStartDate', 'editShiftStartTime', shift.shiftStart);
+    setDateTimeInputs('editShiftEndDate', 'editShiftEndTime', shift.shiftEnd);
     document.getElementById('editShiftNotes').value = shift.notes || '';
     openModal('shiftEditModal');
 }
@@ -2076,8 +2083,8 @@ async function saveShiftEdits(e) {
     const updateData = {
         staffName: document.getElementById('editShiftStaffName').value,
         role: document.getElementById('editShiftRole').value,
-        shiftStart: document.getElementById('editShiftStart').value ? new Date(document.getElementById('editShiftStart').value) : null,
-        shiftEnd: document.getElementById('editShiftEnd').value ? new Date(document.getElementById('editShiftEnd').value) : null,
+        shiftStart: getDateTimeFromInputs('editShiftStartDate', 'editShiftStartTime'),
+        shiftEnd: getDateTimeFromInputs('editShiftEndDate', 'editShiftEndTime'),
         notes: document.getElementById('editShiftNotes').value
     };
 
@@ -2126,15 +2133,234 @@ function formatDate(value) {
     if (!value) return 'N/A';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'N/A';
-    return date.toLocaleString();
+    return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
 }
 
-function toDatetimeLocal(value) {
+function formatDateOnly(value) {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+    });
+}
+
+function formatTimeFromString(value) {
+    if (!value) return 'N/A';
+    const [hours, minutes] = value.split(':');
+    const date = new Date();
+    date.setHours(parseInt(hours || '0', 10));
+    date.setMinutes(parseInt(minutes || '0', 10));
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function getDateTimeFromInputs(dateId, timeId) {
+    const dateValue = document.getElementById(dateId)?.value;
+    const timeValue = document.getElementById(timeId)?.value;
+    const now = new Date();
+
+    const date = dateValue ? new Date(dateValue) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const [hours, minutes] = (timeValue || '').split(':');
+    const finalDate = new Date(date);
+
+    if (timeValue) {
+        finalDate.setHours(parseInt(hours || '0', 10));
+        finalDate.setMinutes(parseInt(minutes || '0', 10));
+    } else {
+        finalDate.setHours(now.getHours());
+        finalDate.setMinutes(now.getMinutes());
+    }
+    finalDate.setSeconds(0, 0);
+    return finalDate;
+}
+
+function setDateTimeInputs(dateId, timeId, value) {
+    const date = value ? new Date(value) : new Date();
+    if (Number.isNaN(date.getTime())) return;
+    const dateInput = document.getElementById(dateId);
+    const timeInput = document.getElementById(timeId);
+    if (dateInput) {
+        const pad = number => String(number).padStart(2, '0');
+        dateInput.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+    if (timeInput) {
+        timeInput.value = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+}
+
+function initializeTimeSelects() {
+    const selects = document.querySelectorAll('.time-select');
+    selects.forEach(select => {
+        if (select.dataset.bound === 'true') return;
+        select.dataset.bound = 'true';
+        select.innerHTML = '<option value="">Select time</option>';
+        for (let hour = 0; hour < 24; hour += 1) {
+            for (let minute = 0; minute < 60; minute += 15) {
+                const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                const label = formatTimeFromString(value);
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.appendChild(option);
+            }
+        }
+    });
+}
+
+function initializeSchedulePickers() {
+    const pickers = document.querySelectorAll('.schedule-picker');
+    pickers.forEach(picker => {
+        if (picker.dataset.bound === 'true') return;
+        picker.dataset.bound = 'true';
+        const isCollapsed = picker.dataset.collapsed !== 'false';
+        picker.innerHTML = `
+            <button type="button" class="schedule-toggle" aria-expanded="${!isCollapsed}" aria-controls="schedule-panels">${isCollapsed ? 'Show schedule times' : 'Hide schedule times'}</button>
+            <div class="schedule-panels" ${isCollapsed ? 'hidden' : ''}>
+                <div class="schedule-tabs">
+                    <button type="button" class="schedule-tab active" data-target="am">AM</button>
+                    <button type="button" class="schedule-tab" data-target="pm">PM</button>
+                </div>
+                <div class="schedule-panel" data-panel="am"></div>
+                <div class="schedule-panel" data-panel="pm" hidden></div>
+            </div>
+        `;
+
+        const panelAm = picker.querySelector('[data-panel="am"]');
+        const panelPm = picker.querySelector('[data-panel="pm"]');
+
+        for (let hour = 0; hour < 24; hour += 1) {
+            for (let minute = 0; minute < 60; minute += 15) {
+                const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                const label = document.createElement('label');
+                label.className = 'schedule-option';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = value;
+
+                const text = document.createElement('span');
+                text.textContent = formatTimeFromString(value);
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+
+                if (hour < 12) {
+                    panelAm.appendChild(label);
+                } else {
+                    panelPm.appendChild(label);
+                }
+            }
+        }
+
+        const toggle = picker.querySelector('.schedule-toggle');
+        const panels = picker.querySelector('.schedule-panels');
+        toggle.addEventListener('click', () => {
+            const shouldOpen = panels.hasAttribute('hidden');
+            if (shouldOpen) {
+                panels.removeAttribute('hidden');
+            } else {
+                panels.setAttribute('hidden', '');
+            }
+            toggle.setAttribute('aria-expanded', String(shouldOpen));
+            toggle.textContent = shouldOpen ? 'Hide schedule times' : 'Show schedule times';
+        });
+
+        picker.querySelectorAll('.schedule-tab').forEach(button => {
+            button.addEventListener('click', () => {
+                picker.querySelectorAll('.schedule-tab').forEach(tab => {
+                    tab.classList.toggle('active', tab === button);
+                });
+                const target = button.dataset.target;
+                picker.querySelectorAll('.schedule-panel').forEach(panel => {
+                    panel.hidden = panel.dataset.panel !== target;
+                });
+            });
+        });
+    });
+}
+
+function getScheduleFromPicker(inputId) {
+    const picker = document.querySelector(`.schedule-picker[data-input="${inputId}"]`);
+    const input = document.getElementById(inputId);
+    if (!picker) {
+        return parseScheduleInput(input?.value || '');
+    }
+    const values = Array.from(picker.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(checkbox => checkbox.value);
+    if (input) {
+        input.value = values.join(', ');
+    }
+    return values;
+}
+
+function normalizeScheduleValues(values) {
+    if (!Array.isArray(values)) return [];
+    return values
+        .map(value => parseScheduleInput(String(value)).shift())
+        .filter(Boolean);
+}
+
+function setSchedulePickerValues(inputId, values) {
+    const picker = document.querySelector(`.schedule-picker[data-input="${inputId}"]`);
+    if (!picker) return;
+    const selected = new Set(normalizeScheduleValues(values));
+    picker.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = selected.has(checkbox.value);
+    });
+    const input = document.getElementById(inputId);
+    if (input) {
+        input.value = Array.from(selected).join(', ');
+    }
+}
+
+function resetSchedulePicker(inputId) {
+    setSchedulePickerValues(inputId, []);
+}
+
+function formatScheduleTimes(schedule) {
+    const times = normalizeScheduleValues(schedule);
+    if (times.length === 0) return '—';
+    return times.map(formatTimeFromString).join(', ');
+}
+
+function getNextDoseDateForMedication(medication) {
+    if (!medication || medication.status !== 'active') return null;
+    const schedule = Array.isArray(medication.schedule) ? medication.schedule : [];
+    if (schedule.length === 0) return null;
+
+    const now = new Date();
+    let next = null;
+
+    schedule.forEach(time => {
+        const doseDate = buildDateFromTime(time);
+        let candidate = doseDate;
+        if (candidate < now) {
+            candidate = new Date(doseDate);
+            candidate.setDate(candidate.getDate() + 1);
+        }
+        if (!next || candidate < next) {
+            next = candidate;
+        }
+    });
+
+    return next;
+}
+
+function formatTimeFromDate(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
-    const pad = number => String(number).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 function getDateValueOrNow(value) {
@@ -2165,7 +2391,7 @@ async function loadAuditLog() {
             <div class="audit-entry ${log.action}">
                 <div class="audit-header">
                     <span class="audit-action">${log.action.toUpperCase()} - ${log.dataType}</span>
-                    <span class="audit-time">${new Date(log.timestamp).toLocaleString()}</span>
+                    <span class="audit-time">${formatDate(log.timestamp)}</span>
                 </div>
                 <div class="audit-user">
                     <span class="audit-user-badge">${log.userName} (${log.userRole})</span>

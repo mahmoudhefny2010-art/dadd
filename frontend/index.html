@@ -152,7 +152,10 @@
                             <form id="symptomsForm" class="compact-form">
                                 <div class="form-group">
                                     <label for="symptomsDate">Date/Time</label>
-                                    <input type="datetime-local" id="symptomsDate">
+                                    <div class="date-time-group">
+                                        <input type="date" id="symptomsDate">
+                                        <select id="symptomsTime" class="time-select"></select>
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <div class="label-row">
@@ -181,7 +184,10 @@
                             <form id="questionForm">
                                 <div class="form-group">
                                     <label for="questionDate">Date/Time</label>
-                                    <input type="datetime-local" id="questionDate">
+                                    <div class="date-time-group">
+                                        <input type="date" id="questionDate">
+                                        <select id="questionTime" class="time-select"></select>
+                                    </div>
                                 </div>
                                 <div class="form-group">
 
@@ -226,7 +232,10 @@
                             <form id="observationForm">
                                 <div class="form-group">
                                     <label for="observationDate">Date/Time</label>
-                                    <input type="datetime-local" id="observationDate">
+                                    <div class="date-time-group">
+                                        <input type="date" id="observationDate">
+                                        <select id="observationTime" class="time-select"></select>
+                                    </div>
                                 </div>
                                 <div class="form-grid">
                                     <div class="form-group">
@@ -282,7 +291,10 @@
                             <form id="medicationForm">
                                 <div class="form-group">
                                     <label for="medStartDate">Start Date</label>
-                                    <input type="datetime-local" id="medStartDate">
+                                    <div class="date-time-group">
+                                        <input type="date" id="medStartDate">
+                                        <select id="medStartTime" class="time-select"></select>
+                                    </div>
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
@@ -320,8 +332,9 @@
                                     <input type="text" id="medPurpose" placeholder="Why this medication">
                                 </div>
                                 <div class="form-group">
-                                    <label for="medSchedule">Schedule Times (HH:MM)</label>
-                                    <input type="text" id="medSchedule" placeholder="08:00, 14:00, 20:00">
+                                    <label for="medSchedule">Schedule Times</label>
+                                    <div class="schedule-picker" data-input="medSchedule"></div>
+                                    <input type="hidden" id="medSchedule">
                                 </div>
                                 <button type="submit" class="btn-primary">Add Medication</button>
                             </form>
@@ -380,7 +393,10 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="intakeDate">Date/Time</label>
-                                        <input type="datetime-local" id="intakeDate">
+                                        <div class="date-time-group">
+                                            <input type="date" id="intakeDate">
+                                            <select id="intakeTime" class="time-select"></select>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -445,11 +461,17 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="shiftStart">Shift Start</label>
-                                        <input type="datetime-local" id="shiftStart" required />
+                                        <div class="date-time-group">
+                                            <input type="date" id="shiftStartDate" required />
+                                            <select id="shiftStartTime" class="time-select" required></select>
+                                        </div>
                                     </div>
                                     <div class="form-group">
                                         <label for="shiftEnd">Shift End</label>
-                                        <input type="datetime-local" id="shiftEnd" required />
+                                        <div class="date-time-group">
+                                            <input type="date" id="shiftEndDate" required />
+                                            <select id="shiftEndTime" class="time-select" required></select>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="form-group">
@@ -528,7 +550,10 @@
             <form id="medicationEditForm">
                 <div class="form-group">
                     <label for="editMedStartDate">Start Date</label>
-                    <input type="datetime-local" id="editMedStartDate">
+                    <div class="date-time-group">
+                        <input type="date" id="editMedStartDate">
+                        <select id="editMedStartTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -565,8 +590,9 @@
                     <input type="text" id="editMedPurpose">
                 </div>
                 <div class="form-group">
-                    <label for="editMedSchedule">Schedule Times (HH:MM)</label>
-                    <input type="text" id="editMedSchedule" placeholder="08:00, 14:00, 20:00">
+                    <label for="editMedSchedule">Schedule Times</label>
+                    <div class="schedule-picker" data-input="editMedSchedule"></div>
+                    <input type="hidden" id="editMedSchedule">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -600,7 +626,10 @@
             <form id="medicationStopForm">
                 <div class="form-group">
                     <label for="stopMedDate">Stop Date</label>
-                    <input type="datetime-local" id="stopMedDate">
+                    <div class="date-time-group">
+                        <input type="date" id="stopMedDate">
+                        <select id="stopMedTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="stopMedReason">Reason</label>
@@ -619,7 +648,10 @@
             <form id="medicationReplaceForm">
                 <div class="form-group">
                     <label for="replaceMedDate">Replacement Date</label>
-                    <input type="datetime-local" id="replaceMedDate">
+                    <div class="date-time-group">
+                        <input type="date" id="replaceMedDate">
+                        <select id="replaceMedTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -656,8 +688,9 @@
                     <input type="text" id="replaceMedPurpose">
                 </div>
                 <div class="form-group">
-                    <label for="replaceMedSchedule">Schedule Times (HH:MM)</label>
-                    <input type="text" id="replaceMedSchedule" placeholder="08:00, 14:00, 20:00">
+                    <label for="replaceMedSchedule">Schedule Times</label>
+                    <div class="schedule-picker" data-input="replaceMedSchedule"></div>
+                    <input type="hidden" id="replaceMedSchedule">
                 </div>
                 <div class="form-group">
                     <label for="replaceMedNotes">Notes</label>
@@ -680,7 +713,10 @@
             <form id="medicationChecklistForm">
                 <div class="form-group">
                     <label for="checklistMedDate">Date/Time</label>
-                    <input type="datetime-local" id="checklistMedDate">
+                    <div class="date-time-group">
+                        <input type="date" id="checklistMedDate">
+                        <select id="checklistMedTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-group checkbox-group">
                     <input type="checkbox" id="checklistMedTaken" checked>
@@ -739,7 +775,10 @@
             <form id="questionEditForm">
                 <div class="form-group">
                     <label for="editQuestionDate">Date/Time</label>
-                    <input type="datetime-local" id="editQuestionDate">
+                    <div class="date-time-group">
+                        <input type="date" id="editQuestionDate">
+                        <select id="editQuestionTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-group">
                     <div class="label-row">
@@ -789,7 +828,10 @@
             <form id="observationEditForm">
                 <div class="form-group">
                     <label for="editObservationDate">Date/Time</label>
-                    <input type="datetime-local" id="editObservationDate">
+                    <div class="date-time-group">
+                        <input type="date" id="editObservationDate">
+                        <select id="editObservationTime" class="time-select"></select>
+                    </div>
                 </div>
                 <div class="form-grid">
                     <div class="form-group">
@@ -838,7 +880,10 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="editIntakeDate">Date/Time</label>
-                        <input type="datetime-local" id="editIntakeDate">
+                        <div class="date-time-group">
+                            <input type="date" id="editIntakeDate">
+                            <select id="editIntakeTime" class="time-select"></select>
+                        </div>
                     </div>
                 </div>
                 <div class="form-row">
@@ -895,11 +940,17 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="editShiftStart">Shift Start</label>
-                        <input type="datetime-local" id="editShiftStart" required>
+                        <div class="date-time-group">
+                            <input type="date" id="editShiftStartDate" required>
+                            <select id="editShiftStartTime" class="time-select" required></select>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="editShiftEnd">Shift End</label>
-                        <input type="datetime-local" id="editShiftEnd" required>
+                        <div class="date-time-group">
+                            <input type="date" id="editShiftEndDate" required>
+                            <select id="editShiftEndTime" class="time-select" required></select>
+                        </div>
                     </div>
                 </div>
                 <div class="form-group">
