@@ -14,6 +14,16 @@ let currentPatientId = null;
 let authToken = null;
 let selectedMedicationId = null;
 let medicationCache = [];
+let questionsCache = [];
+let observationsCache = [];
+let intakesCache = [];
+let shiftsCache = [];
+let patientsCache = [];
+
+let editingQuestionId = null;
+let editingObservationId = null;
+let editingIntakeId = null;
+let editingShiftId = null;
 
 const AUTO_LOGIN_EMAILS = [
     'menna.dad@example.com',
@@ -24,6 +34,9 @@ const AUTO_LOGIN_EMAILS = [
 ];
 
 const DEFAULT_PATIENT_NAME = 'Mohamed Hefny';
+const OFFLINE_QUEUE_KEY = 'pendingActions';
+
+let isSyncingPending = false;
 
 // ========== INITIALIZATION ==========
 document.addEventListener('DOMContentLoaded', () => {
@@ -37,6 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSavedCredentials();
     autoLoginIfEligible();
     initializeMobileChrome();
+    initializeOfflineMode();
+    initializeDictation();
 
     setupEventListeners();
 });
@@ -93,6 +108,55 @@ function setupEventListeners() {
     document.getElementById('medicationStopForm').addEventListener('submit', stopMedication);
     document.getElementById('medicationReplaceForm').addEventListener('submit', replaceMedication);
     document.getElementById('medicationChecklistForm').addEventListener('submit', addMedicationChecklistEntry);
+
+    document.getElementById('shiftForm').addEventListener('submit', saveShift);
+    document.getElementById('shiftEditForm').addEventListener('submit', saveShiftEdits);
+
+    document.getElementById('questionEditForm').addEventListener('submit', saveQuestionEdits);
+    document.getElementById('observationEditForm').addEventListener('submit', saveObservationEdits);
+    document.getElementById('intakeEditForm').addEventListener('submit', saveIntakeEdits);
+
+    document.getElementById('patientEditForm').addEventListener('submit', savePatientEdits);
+    document.getElementById('editPatientBtn').addEventListener('click', openPatientEditModal);
+    document.getElementById('deletePatientBtn').addEventListener('click', deleteSelectedPatient);
+
+    const symptomsForm = document.getElementById('symptomsForm');
+    if (symptomsForm) {
+        symptomsForm.addEventListener('submit', saveSymptoms);
+    }
+
+    const remindersList = document.getElementById('medicationRemindersList');
+    if (remindersList) {
+        remindersList.addEventListener('click', handleReminderAction);
+    }
+    const dashboardRemindersList = document.getElementById('dashboardRemindersList');
+    if (dashboardRemindersList) {
+        dashboardRemindersList.addEventListener('click', handleReminderAction);
+    }
+
+    const syncNowBtn = document.getElementById('syncNowBtn');
+    if (syncNowBtn) {
+        syncNowBtn.addEventListener('click', syncPendingActions);
+    }
+
+    const questionsList = document.getElementById('questionsList');
+    if (questionsList) {
+        questionsList.addEventListener('click', handleQuestionAction);
+    }
+    const observationsList = document.getElementById('observationsList');
+    if (observationsList) {
+        observationsList.addEventListener('click', handleObservationAction);
+    }
+    const intakesList = document.getElementById('intakesList');
+    if (intakesList) {
+        intakesList.addEventListener('click', handleIntakeAction);
+    }
+    const shiftsList = document.getElementById('shiftsList');
+    if (shiftsList) {
+        shiftsList.addEventListener('click', handleShiftAction);
+    }
+
+    document.getElementById('deleteMedicationBtn').addEventListener('click', deleteSelectedMedication);
 
     const mobileToggle = document.getElementById('mobileChromeToggle');
     if (mobileToggle) {
@@ -332,6 +396,7 @@ function switchTab(e) {
         if (tabName === 'observations') loadObservations();
         if (tabName === 'medications') loadMedications();
         if (tabName === 'intakes') loadIntakes();
+        if (tabName === 'shifts') loadShifts();
         if (tabName === 'audit') loadAuditLog();
         if (tabName === 'dashboard') loadDashboard();
     }
@@ -344,6 +409,7 @@ async function loadPatients() {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const patients = await response.json();
+        patientsCache = patients;
         const select = document.getElementById('patientSelect');
         
         select.innerHTML = '<option value="">-- Select a Patient --</option>';
@@ -381,6 +447,7 @@ async function selectPatient(e) {
         loadObservations();
         loadMedications();
         loadIntakes();
+        loadShifts();
     } else {
         document.getElementById('patientNameBreadcrumb').textContent = 'Select Patient';
     }
@@ -411,6 +478,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('open');
+        refreshDictationBindings();
     }
 }
 
@@ -429,6 +497,18 @@ function closeModalByElement(modal) {
     }
 }
 
+function openPatientEditModal() {
+    if (!currentPatientId) return;
+    const patient = patientsCache.find(item => item._id === currentPatientId);
+    if (!patient) return;
+    document.getElementById('editPatientName').value = patient.name || '';
+    document.getElementById('editPatientAge').value = patient.age || '';
+    document.getElementById('editPatientPhone').value = patient.phoneNumber || '';
+    document.getElementById('editEmergencyContact').value = patient.emergencyContact || '';
+    document.getElementById('editMedicalConditions').value = (patient.medicalConditions || []).join(', ');
+    openModal('patientEditModal');
+}
+
 async function savePatient(e) {
     e.preventDefault();
     
@@ -445,21 +525,68 @@ async function savePatient(e) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/patients`, {
+        await sendRequest({
+            url: `${API_BASE}/patients`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(patientData)
+            body: patientData,
+            onSuccess: () => {
+                closePatientModal();
+                loadPatients();
+            }
         });
-
-        if (response.ok) {
-            closePatientModal();
-            loadPatients();
-        }
     } catch (error) {
         alert('Error saving patient: ' + error.message);
+    }
+}
+
+async function savePatientEdits(e) {
+    e.preventDefault();
+    if (!currentPatientId) return;
+
+    const updateData = {
+        name: document.getElementById('editPatientName').value,
+        age: parseInt(document.getElementById('editPatientAge').value) || null,
+        phoneNumber: document.getElementById('editPatientPhone').value,
+        emergencyContact: document.getElementById('editEmergencyContact').value,
+        medicalConditions: document.getElementById('editMedicalConditions').value
+            .split(',')
+            .map(c => c.trim())
+            .filter(c => c)
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/patients/${currentPatientId}`,
+            method: 'PUT',
+            body: updateData,
+            onSuccess: () => {
+                closeModal('patientEditModal');
+                loadPatients();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error updating patient: ' + error.message);
+    }
+}
+
+async function deleteSelectedPatient() {
+    if (!currentPatientId) return;
+    if (!confirm('Delete this patient and all related records?')) return;
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/patients/${currentPatientId}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                currentPatientId = null;
+                loadPatients();
+                document.getElementById('patientNameBreadcrumb').textContent = 'Select Patient';
+            }
+        });
+    } catch (error) {
+        alert('Error deleting patient: ' + error.message);
     }
 }
 
@@ -514,8 +641,127 @@ async function loadDashboard() {
         } else {
             activityDiv.innerHTML = '<p>No recent activity</p>';
         }
+
+        loadDailySummary();
+        loadDashboardReminders();
+        loadDashboardShifts();
     } catch (error) {
         console.error('Error loading dashboard:', error);
+    }
+}
+
+async function loadDashboardReminders() {
+    if (!currentPatientId) return;
+    try {
+        const meds = await fetchJsonWithCache(`summary-medications-${currentPatientId}`, `${API_BASE}/medications?patientId=${currentPatientId}`);
+        renderMedicationReminders(meds, 'dashboardRemindersList');
+    } catch (error) {
+        console.error('Error loading reminders:', error);
+    }
+}
+
+async function loadDashboardShifts() {
+    if (!currentPatientId) return;
+    const container = document.getElementById('dashboardShiftsList');
+    if (!container) return;
+    try {
+        const shifts = await fetchJsonWithCache(`summary-shifts-${currentPatientId}`, `${API_BASE}/shifts?patientId=${currentPatientId}`);
+        const today = new Date();
+        const todaysShifts = (shifts || []).filter(shift => shift.shiftStart && isSameDay(new Date(shift.shiftStart), today));
+        if (todaysShifts.length === 0) {
+            container.innerHTML = '<div class="empty-state compact"><p>No shifts today.</p></div>';
+            return;
+        }
+        container.innerHTML = todaysShifts.map(shift => `
+            <div class="history-item">
+                <div class="history-title">${shift.staffName} (${shift.role})</div>
+                <div class="history-meta">
+                    <span>${formatDate(shift.shiftStart)}</span>
+                    <span>${formatDate(shift.shiftEnd)}</span>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = '<div class="empty-state compact"><p>Unable to load shifts.</p></div>';
+    }
+}
+
+async function saveSymptoms(e) {
+    e.preventDefault();
+    if (!currentPatientId) return;
+
+    const symptomsNotes = document.getElementById('symptomsNotes').value.trim();
+    if (!symptomsNotes) return;
+
+    const observationData = {
+        patientId: currentPatientId,
+        timestamp: getDateValueOrNow(document.getElementById('symptomsDate').value),
+        vitals: {},
+        notes: `Symptoms: ${symptomsNotes}`,
+        createdBy: currentUser.id
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/observations`,
+            method: 'POST',
+            body: observationData,
+            onSuccess: () => {
+                document.getElementById('symptomsForm').reset();
+                loadObservations();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error saving symptoms: ' + error.message);
+    }
+}
+
+async function loadDailySummary() {
+    if (!currentPatientId) return;
+    const summaryDiv = document.getElementById('dailySummary');
+    if (!summaryDiv) return;
+
+    try {
+        const [questions, observations, intakes, medications] = await Promise.all([
+            fetchJsonWithCache(`summary-questions-${currentPatientId}`, `${API_BASE}/questions?patientId=${currentPatientId}`),
+            fetchJsonWithCache(`summary-observations-${currentPatientId}`, `${API_BASE}/observations?patientId=${currentPatientId}`),
+            fetchJsonWithCache(`summary-intakes-${currentPatientId}`, `${API_BASE}/intakes?patientId=${currentPatientId}`),
+            fetchJsonWithCache(`summary-medications-${currentPatientId}`, `${API_BASE}/medications?patientId=${currentPatientId}`)
+        ]);
+
+        const today = new Date();
+        const isToday = value => isSameDay(new Date(value), today);
+
+        const questionsToday = (questions || []).filter(q => q.createdAt && isToday(q.createdAt));
+        const observationsToday = (observations || []).filter(o => (o.timestamp || o.createdAt) && isToday(o.timestamp || o.createdAt));
+        const intakesToday = (intakes || []).filter(i => i.date && isToday(i.date));
+
+        const checklistEntries = (medications || []).flatMap(med => med.checklist || []);
+        const checklistToday = checklistEntries.filter(entry => entry.date && isToday(entry.date));
+        const takenCount = checklistToday.filter(entry => entry.taken).length;
+        const missedCount = checklistToday.filter(entry => entry.taken === false).length;
+
+        summaryDiv.innerHTML = `
+            <div class="summary-row">
+                <span>Questions added</span>
+                <strong>${questionsToday.length}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Observations recorded</span>
+                <strong>${observationsToday.length}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Intake records</span>
+                <strong>${intakesToday.length}</strong>
+            </div>
+            <div class="summary-row">
+                <span>Medication doses</span>
+                <strong>${takenCount} taken / ${missedCount} missed</strong>
+            </div>
+        `;
+    } catch (error) {
+        summaryDiv.innerHTML = '<p>Unable to load today summary.</p>';
     }
 }
 
@@ -529,23 +775,20 @@ async function saveQuestion(e) {
         category: document.getElementById('questionCategory').value,
         priority: document.getElementById('questionPriority').value,
         status: 'pending',
+        askedDate: getDateValueOrNow(document.getElementById('questionDate').value),
         createdBy: currentUser.id
     };
 
     try {
-        const response = await fetch(`${API_BASE}/questions`, {
+        await sendRequest({
+            url: `${API_BASE}/questions`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(questionData)
+            body: questionData,
+            onSuccess: () => {
+                document.getElementById('questionForm').reset();
+                loadQuestions();
+            }
         });
-
-        if (response.ok) {
-            document.getElementById('questionForm').reset();
-            loadQuestions();
-        }
     } catch (error) {
         alert('Error saving question: ' + error.message);
     }
@@ -559,6 +802,7 @@ async function loadQuestions() {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const questions = await response.json();
+        questionsCache = questions;
 
         const container = document.getElementById('questionsList');
         if (questions.length === 0) {
@@ -576,15 +820,92 @@ async function loadQuestions() {
                     <span>Category: ${q.category || 'General'}</span>
                     <span>Status: ${q.status}</span>
                 </div>
-                <div class="list-item-footer">
-                    <span class="recorded-by">By: ${q.createdBy?.name || 'Unknown'}</span>
-                    <span>${new Date(q.createdAt).toLocaleString()}</span>
-                </div>
                 ${q.answer ? `<div class="list-item-body"><strong>Answer:</strong> ${q.answer}</div>` : ''}
+                <div class="list-item-footer">
+                    <div class="item-meta-lines">
+                        <span>Created by ${formatUserName(q.createdBy)} · ${formatDate(q.createdAt)}</span>
+                        <span>Updated by ${formatUserName(q.updatedBy || q.createdBy)} · ${formatDate(q.updatedAt || q.createdAt)}</span>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn-tertiary" data-action="edit-question" data-id="${q._id}">Edit</button>
+                        <button class="btn-tertiary" data-action="delete-question" data-id="${q._id}">Delete</button>
+                    </div>
+                </div>
             </div>
         `).join('');
     } catch (error) {
         console.error('Error loading questions:', error);
+    }
+}
+
+function handleQuestionAction(e) {
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const id = action.dataset.id;
+    if (action.dataset.action === 'edit-question') {
+        openQuestionEditModal(id);
+    }
+    if (action.dataset.action === 'delete-question') {
+        deleteQuestion(id);
+    }
+}
+
+function openQuestionEditModal(questionId) {
+    const question = questionsCache.find(item => item._id === questionId);
+    if (!question) return;
+    editingQuestionId = questionId;
+    document.getElementById('editQuestionDate').value = toDatetimeLocal(question.askedDate || question.createdAt);
+    document.getElementById('editQuestionText').value = question.question || '';
+    document.getElementById('editQuestionCategory').value = question.category || '';
+    document.getElementById('editQuestionPriority').value = question.priority || 'medium';
+    document.getElementById('editQuestionStatus').value = question.status || 'pending';
+    document.getElementById('editQuestionAnswer').value = question.answer || '';
+    openModal('questionEditModal');
+}
+
+async function saveQuestionEdits(e) {
+    e.preventDefault();
+    if (!editingQuestionId) return;
+
+    const updateData = {
+        askedDate: getDateValueOrNow(document.getElementById('editQuestionDate').value),
+        question: document.getElementById('editQuestionText').value,
+        category: document.getElementById('editQuestionCategory').value,
+        priority: document.getElementById('editQuestionPriority').value,
+        status: document.getElementById('editQuestionStatus').value,
+        answer: document.getElementById('editQuestionAnswer').value
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/questions/${editingQuestionId}`,
+            method: 'PUT',
+            body: updateData,
+            onSuccess: () => {
+                closeModal('questionEditModal');
+                loadQuestions();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error updating question: ' + error.message);
+    }
+}
+
+async function deleteQuestion(questionId) {
+    if (!confirm('Delete this question?')) return;
+    try {
+        await sendRequest({
+            url: `${API_BASE}/questions/${questionId}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                loadQuestions();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error deleting question: ' + error.message);
     }
 }
 
@@ -594,6 +915,7 @@ async function saveObservation(e) {
 
     const observationData = {
         patientId: currentPatientId,
+        timestamp: getDateValueOrNow(document.getElementById('observationDate').value),
         vitals: {
             bloodSugar: document.getElementById('bloodSugar').value ? { value: parseFloat(document.getElementById('bloodSugar').value) } : null,
             bloodPressure: (document.getElementById('bpSystolic').value || document.getElementById('bpDiastolic').value) ? {
@@ -609,19 +931,15 @@ async function saveObservation(e) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/observations`, {
+        await sendRequest({
+            url: `${API_BASE}/observations`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(observationData)
+            body: observationData,
+            onSuccess: () => {
+                document.getElementById('observationForm').reset();
+                loadObservations();
+            }
         });
-
-        if (response.ok) {
-            document.getElementById('observationForm').reset();
-            loadObservations();
-        }
     } catch (error) {
         alert('Error saving observation: ' + error.message);
     }
@@ -635,6 +953,7 @@ async function loadObservations() {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const observations = await response.json();
+        observationsCache = observations;
 
         const container = document.getElementById('observationsList');
         if (observations.length === 0) {
@@ -656,13 +975,98 @@ async function loadObservations() {
                     ${obs.notes ? `<p><strong>Notes:</strong> ${obs.notes}</p>` : ''}
                 </div>
                 <div class="list-item-footer">
-                    <span class="recorded-by">By: ${obs.createdBy?.name || 'Unknown'}</span>
-                    <span>${new Date(obs.timestamp).toLocaleString()}</span>
+                    <div class="item-meta-lines">
+                        <span>Created by ${formatUserName(obs.createdBy)} · ${formatDate(obs.createdAt || obs.timestamp)}</span>
+                        <span>Updated by ${formatUserName(obs.updatedBy || obs.createdBy)} · ${formatDate(obs.updatedAt || obs.createdAt || obs.timestamp)}</span>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn-tertiary" data-action="edit-observation" data-id="${obs._id}">Edit</button>
+                        <button class="btn-tertiary" data-action="delete-observation" data-id="${obs._id}">Delete</button>
+                    </div>
                 </div>
             </div>
         `).join('');
     } catch (error) {
         console.error('Error loading observations:', error);
+    }
+}
+
+function handleObservationAction(e) {
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const id = action.dataset.id;
+    if (action.dataset.action === 'edit-observation') {
+        openObservationEditModal(id);
+    }
+    if (action.dataset.action === 'delete-observation') {
+        deleteObservation(id);
+    }
+}
+
+function openObservationEditModal(observationId) {
+    const observation = observationsCache.find(item => item._id === observationId);
+    if (!observation) return;
+    editingObservationId = observationId;
+    document.getElementById('editObservationDate').value = toDatetimeLocal(observation.timestamp || observation.createdAt);
+    document.getElementById('editBloodSugar').value = observation.vitals?.bloodSugar?.value || '';
+    document.getElementById('editBpSystolic').value = observation.vitals?.bloodPressure?.systolic || '';
+    document.getElementById('editBpDiastolic').value = observation.vitals?.bloodPressure?.diastolic || '';
+    document.getElementById('editOxygen').value = observation.vitals?.oxygenLevel?.value || '';
+    document.getElementById('editHeartRate').value = observation.vitals?.heartRate?.value || '';
+    document.getElementById('editTemperature').value = observation.vitals?.temperature?.value || '';
+    document.getElementById('editObservationNotes').value = observation.notes || '';
+    openModal('observationEditModal');
+}
+
+async function saveObservationEdits(e) {
+    e.preventDefault();
+    if (!editingObservationId) return;
+
+    const updateData = {
+        timestamp: getDateValueOrNow(document.getElementById('editObservationDate').value),
+        vitals: {
+            bloodSugar: document.getElementById('editBloodSugar').value ? { value: parseFloat(document.getElementById('editBloodSugar').value) } : null,
+            bloodPressure: (document.getElementById('editBpSystolic').value || document.getElementById('editBpDiastolic').value) ? {
+                systolic: parseInt(document.getElementById('editBpSystolic').value) || null,
+                diastolic: parseInt(document.getElementById('editBpDiastolic').value) || null
+            } : null,
+            oxygenLevel: document.getElementById('editOxygen').value ? { value: parseFloat(document.getElementById('editOxygen').value) } : null,
+            heartRate: document.getElementById('editHeartRate').value ? { value: parseInt(document.getElementById('editHeartRate').value) } : null,
+            temperature: document.getElementById('editTemperature').value ? { value: parseFloat(document.getElementById('editTemperature').value) } : null
+        },
+        notes: document.getElementById('editObservationNotes').value
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/observations/${editingObservationId}`,
+            method: 'PUT',
+            body: updateData,
+            onSuccess: () => {
+                closeModal('observationEditModal');
+                loadObservations();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error updating observation: ' + error.message);
+    }
+}
+
+async function deleteObservation(observationId) {
+    if (!confirm('Delete this observation?')) return;
+    try {
+        await sendRequest({
+            url: `${API_BASE}/observations/${observationId}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                loadObservations();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error deleting observation: ' + error.message);
     }
 }
 
@@ -680,23 +1084,21 @@ async function saveMedication(e) {
         },
         frequency: document.getElementById('medFrequency').value,
         purpose: document.getElementById('medPurpose').value,
+        schedule: parseScheduleInput(document.getElementById('medSchedule').value),
+        startDate: getDateValueOrNow(document.getElementById('medStartDate').value),
         createdBy: currentUser.id
     };
 
     try {
-        const response = await fetch(`${API_BASE}/medications`, {
+        await sendRequest({
+            url: `${API_BASE}/medications`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(medicationData)
+            body: medicationData,
+            onSuccess: () => {
+                document.getElementById('medicationForm').reset();
+                loadMedications();
+            }
         });
-
-        if (response.ok) {
-            document.getElementById('medicationForm').reset();
-            loadMedications();
-        }
     } catch (error) {
         alert('Error saving medication: ' + error.message);
     }
@@ -740,8 +1142,10 @@ async function loadMedications() {
                     ${med.notes ? `<p><strong>Notes:</strong> ${med.notes}</p>` : ''}
                 </div>
                 <div class="list-item-footer">
-                    <span class="recorded-by">By: ${med.createdBy?.name || 'Unknown'}</span>
-                    <span>Updated: ${new Date(med.updatedAt || med.createdAt).toLocaleString()}</span>
+                    <div class="item-meta-lines">
+                        <span>Created by ${formatUserName(med.createdBy)} · ${formatDate(med.createdAt)}</span>
+                        <span>Updated by ${formatUserName(med.updatedBy || med.createdBy)} · ${formatDate(med.updatedAt || med.createdAt)}</span>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -755,6 +1159,8 @@ async function loadMedications() {
         } else {
             clearMedicationHistory();
         }
+
+        renderMedicationReminders(medications);
     } catch (error) {
         console.error('Error loading medications:', error);
     }
@@ -788,11 +1194,12 @@ function updateMedicationActionState() {
     const stopBtn = document.getElementById('stopMedicationBtn');
     const replaceBtn = document.getElementById('replaceMedicationBtn');
     const checklistBtn = document.getElementById('checklistMedicationBtn');
+    const deleteBtn = document.getElementById('deleteMedicationBtn');
 
     const selected = getSelectedMedication();
     const hasSelection = Boolean(selected);
 
-    [editBtn, stopBtn, replaceBtn, checklistBtn].forEach(button => {
+    [editBtn, stopBtn, replaceBtn, checklistBtn, deleteBtn].forEach(button => {
         button.disabled = !hasSelection;
     });
 
@@ -800,6 +1207,26 @@ function updateMedicationActionState() {
         label.textContent = hasSelection
             ? `${selected.name} (${selected.status}) selected. Use the shortcuts to edit, stop, replace, or log a dose.`
             : 'Select a medication to edit, stop, replace, or log a dose.';
+    }
+}
+
+async function deleteSelectedMedication() {
+    const selected = getSelectedMedication();
+    if (!selected) return;
+    if (!confirm('Delete this medication?')) return;
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/medications/${selected._id}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                selectedMedicationId = null;
+                loadMedications();
+            }
+        });
+    } catch (error) {
+        alert('Error deleting medication: ' + error.message);
     }
 }
 
@@ -867,10 +1294,12 @@ function openEditMedicationModal() {
     if (!selected) return;
     document.getElementById('editMedName').value = selected.name || '';
     document.getElementById('editMedType').value = selected.type || '';
+    document.getElementById('editMedStartDate').value = toDatetimeLocal(selected.startDate || selected.createdAt);
     document.getElementById('editMedAmount').value = selected.dosage?.amount || '';
     document.getElementById('editMedUnit').value = selected.dosage?.unit || '';
     document.getElementById('editMedFrequency').value = selected.frequency || '';
     document.getElementById('editMedPurpose').value = selected.purpose || '';
+    document.getElementById('editMedSchedule').value = (selected.schedule || []).join(', ');
     document.getElementById('editMedStatus').value = selected.status || 'active';
     document.getElementById('editMedNotes').value = selected.notes || '';
     openModal('medicationEditModal');
@@ -908,31 +1337,29 @@ async function saveMedicationEdits(e) {
     const updateData = {
         name: document.getElementById('editMedName').value,
         type: document.getElementById('editMedType').value,
+        startDate: getDateValueOrNow(document.getElementById('editMedStartDate').value),
         dosage: {
             amount: parseFloat(document.getElementById('editMedAmount').value),
             unit: document.getElementById('editMedUnit').value
         },
         frequency: document.getElementById('editMedFrequency').value,
         purpose: document.getElementById('editMedPurpose').value,
+        schedule: parseScheduleInput(document.getElementById('editMedSchedule').value),
         status: document.getElementById('editMedStatus').value,
         notes: document.getElementById('editMedNotes').value,
         changeReason: document.getElementById('editMedReason').value
     };
 
     try {
-        const response = await fetch(`${API_BASE}/medications/${selected._id}`, {
+        await sendRequest({
+            url: `${API_BASE}/medications/${selected._id}`,
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(updateData)
+            body: updateData,
+            onSuccess: () => {
+                closeModal('medicationEditModal');
+                loadMedications();
+            }
         });
-
-        if (response.ok) {
-            closeModal('medicationEditModal');
-            loadMedications();
-        }
     } catch (error) {
         alert('Error updating medication: ' + error.message);
     }
@@ -947,22 +1374,18 @@ async function stopMedication(e) {
     const reason = document.getElementById('stopMedReason').value;
 
     try {
-        const response = await fetch(`${API_BASE}/medications/${selected._id}/stop`, {
+        await sendRequest({
+            url: `${API_BASE}/medications/${selected._id}/stop`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify({
+            body: {
                 endDate: dateValue ? new Date(dateValue) : new Date(),
                 reason
-            })
+            },
+            onSuccess: () => {
+                closeModal('medicationStopModal');
+                loadMedications();
+            }
         });
-
-        if (response.ok) {
-            closeModal('medicationStopModal');
-            loadMedications();
-        }
     } catch (error) {
         alert('Error stopping medication: ' + error.message);
     }
@@ -985,28 +1408,25 @@ async function replaceMedication(e) {
         },
         frequency: document.getElementById('replaceMedFrequency').value,
         purpose: document.getElementById('replaceMedPurpose').value,
+        schedule: parseScheduleInput(document.getElementById('replaceMedSchedule').value),
         notes: document.getElementById('replaceMedNotes').value
     };
 
     try {
-        const response = await fetch(`${API_BASE}/medications/${selected._id}/replace`, {
+        await sendRequest({
+            url: `${API_BASE}/medications/${selected._id}/replace`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify({
+            body: {
                 replacementDate: replacementDate ? new Date(replacementDate) : new Date(),
                 newMedicationName,
                 newMedicationData,
                 reason: document.getElementById('replaceMedReason').value
-            })
+            },
+            onSuccess: () => {
+                closeModal('medicationReplaceModal');
+                loadMedications();
+            }
         });
-
-        if (response.ok) {
-            closeModal('medicationReplaceModal');
-            loadMedications();
-        }
     } catch (error) {
         alert('Error replacing medication: ' + error.message);
     }
@@ -1029,27 +1449,95 @@ async function addMedicationChecklistEntry(e) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/medications/${selected._id}/checklist`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify({
-                date,
-                time,
-                taken,
-                notes
-            })
-        });
-
-        if (response.ok) {
+        await submitChecklistEntry(selected._id, { date, time, taken, notes }, () => {
             closeModal('medicationChecklistModal');
             loadMedications();
-        }
+        });
     } catch (error) {
         alert('Error adding checklist entry: ' + error.message);
     }
+}
+
+function renderMedicationReminders(medications, containerId = 'medicationRemindersList') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const today = new Date();
+    const reminders = [];
+
+    (medications || []).forEach(med => {
+        if (med.status !== 'active') return;
+        const schedule = Array.isArray(med.schedule) ? med.schedule : [];
+        schedule.forEach(time => {
+            const entry = (med.checklist || []).find(check => {
+                return check.date && isSameDay(new Date(check.date), today) && check.time === time;
+            });
+            reminders.push({
+                id: med._id,
+                name: med.name,
+                time,
+                status: entry ? (entry.taken ? 'taken' : 'missed') : 'pending'
+            });
+        });
+    });
+
+    if (reminders.length === 0) {
+        container.innerHTML = '<div class="empty-state compact"><p>No reminders set for today.</p></div>';
+        return;
+    }
+
+    reminders.sort((a, b) => a.time.localeCompare(b.time));
+    container.innerHTML = reminders.map(reminder => `
+        <div class="list-item reminder-item">
+            <div class="list-item-header">
+                <div>
+                    <div class="list-item-title">${reminder.name}</div>
+                    <div class="list-item-meta">
+                        <span>Time: ${reminder.time}</span>
+                        <span class="status-pill status-${reminder.status}">${reminder.status}</span>
+                    </div>
+                </div>
+                <div class="reminder-actions">
+                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-taken="true" ${reminder.status !== 'pending' ? 'disabled' : ''}>Taken</button>
+                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-taken="false" ${reminder.status !== 'pending' ? 'disabled' : ''}>Missed</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function handleReminderAction(e) {
+    const button = e.target.closest('.reminder-action');
+    if (!button) return;
+    const medId = button.dataset.medId;
+    const time = button.dataset.time;
+    const taken = button.dataset.taken === 'true';
+    const date = buildDateFromTime(time);
+
+    submitChecklistEntry(medId, { date, time, taken, notes: '' }, () => {
+        loadMedications();
+        loadDashboard();
+    });
+}
+
+function buildDateFromTime(time) {
+    const [hours, minutes] = (time || '').split(':');
+    const date = new Date();
+    if (!Number.isNaN(parseInt(hours, 10))) {
+        date.setHours(parseInt(hours, 10));
+        date.setMinutes(parseInt(minutes || '0', 10));
+        date.setSeconds(0, 0);
+    }
+    return date;
+}
+
+async function submitChecklistEntry(medId, payload, onSuccess) {
+    await sendRequest({
+        url: `${API_BASE}/medications/${medId}/checklist`,
+        method: 'POST',
+        body: payload,
+        onSuccess
+    });
 }
 
 // ========== INTAKES ==========
@@ -1074,21 +1562,205 @@ async function saveIntake(e) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}/intakes`, {
+        await sendRequest({
+            url: `${API_BASE}/intakes`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(intakeData)
+            body: intakeData,
+            onSuccess: () => {
+                document.getElementById('intakeForm').reset();
+                loadIntakes();
+            }
         });
-
-        if (response.ok) {
-            document.getElementById('intakeForm').reset();
-            loadIntakes();
-        }
     } catch (error) {
         alert('Error saving intake: ' + error.message);
+    }
+}
+
+function parseScheduleInput(value) {
+    if (!value) return [];
+    return value
+        .split(',')
+        .map(item => item.trim())
+        .filter(item => /^\d{1,2}:\d{2}$/.test(item))
+        .map(item => item.padStart(5, '0'));
+}
+
+function isSameDay(first, second) {
+    return first.getFullYear() === second.getFullYear()
+        && first.getMonth() === second.getMonth()
+        && first.getDate() === second.getDate();
+}
+
+async function sendRequest({ url, method, body, onSuccess }) {
+    if (!navigator.onLine) {
+        enqueueAction({ url, method, body });
+        if (onSuccess) {
+            onSuccess(null);
+        }
+        return;
+    }
+
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        throw new Error('Request failed');
+    }
+
+    const data = await response.json().catch(() => null);
+    if (onSuccess) {
+        onSuccess(data);
+    }
+    return data;
+}
+
+function initializeOfflineMode() {
+    window.addEventListener('online', syncPendingActions);
+    window.addEventListener('offline', updateOfflineBanner);
+    updateOfflineBanner();
+}
+
+function getPendingActions() {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function enqueueAction(action) {
+    const queue = getPendingActions();
+    queue.push({ ...action, queuedAt: new Date().toISOString() });
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    updateOfflineBanner();
+}
+
+async function syncPendingActions() {
+    if (isSyncingPending) return;
+    if (!navigator.onLine) {
+        updateOfflineBanner();
+        return;
+    }
+
+    isSyncingPending = true;
+    const queue = getPendingActions();
+    const remaining = [];
+
+    for (const action of queue) {
+        try {
+            const response = await fetch(action.url, {
+                method: action.method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify(action.body)
+            });
+
+            if (!response.ok) {
+                remaining.push(action);
+            }
+        } catch {
+            remaining.push(action);
+        }
+    }
+
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    isSyncingPending = false;
+    updateOfflineBanner();
+
+    if (remaining.length === 0) {
+        loadDashboard();
+        loadQuestions();
+        loadObservations();
+        loadMedications();
+        loadIntakes();
+    }
+}
+
+function updateOfflineBanner() {
+    const banner = document.getElementById('offlineBanner');
+    const text = document.getElementById('offlineBannerText');
+    if (!banner || !text) return;
+    const pendingCount = getPendingActions().length;
+    const isOffline = !navigator.onLine;
+
+    if (isOffline || pendingCount > 0) {
+        banner.classList.add('show');
+        if (isOffline) {
+            text.textContent = 'You are offline. Changes will sync when online.';
+        } else {
+            text.textContent = `Syncing ${pendingCount} pending update${pendingCount === 1 ? '' : 's'} when online.`;
+        }
+    } else {
+        banner.classList.remove('show');
+    }
+}
+
+// (removed duplicate helper definitions)
+
+function initializeDictation() {
+    document.querySelectorAll('.dictation-btn').forEach(button => {
+        button.addEventListener('click', () => startDictation(button.dataset.target));
+    });
+}
+
+// Rebind dictation buttons added after initial load
+function refreshDictationBindings() {
+    document.querySelectorAll('.dictation-btn').forEach(button => {
+        if (button.dataset.bound === 'true') return;
+        button.dataset.bound = 'true';
+        button.addEventListener('click', () => startDictation(button.dataset.target));
+    });
+}
+
+function startDictation(targetId) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert('Dictation is not supported on this device.');
+        return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = event => {
+        const transcript = event.results[0][0].transcript;
+        target.value = target.value ? `${target.value} ${transcript}` : transcript;
+    };
+
+    recognition.onerror = () => {
+        alert('Dictation failed. Please try again.');
+    };
+
+    recognition.start();
+}
+
+async function fetchJsonWithCache(cacheKey, url) {
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!response.ok) throw new Error('Request failed');
+        const data = await response.json();
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+        return data;
+    } catch (error) {
+        const cached = localStorage.getItem(cacheKey);
+        return cached ? JSON.parse(cached) : [];
     }
 }
 
@@ -1100,6 +1772,7 @@ async function loadIntakes() {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const intakes = await response.json();
+        intakesCache = intakes;
 
         const container = document.getElementById('intakesList');
         if (intakes.length === 0) {
@@ -1119,14 +1792,273 @@ async function loadIntakes() {
                     ${intake.notes ? `<p><strong>Notes:</strong> ${intake.notes}</p>` : ''}
                 </div>
                 <div class="list-item-footer">
-                    <span class="recorded-by">By: ${intake.createdBy?.name || 'Unknown'}</span>
-                    <span>${new Date(intake.date).toLocaleString()}</span>
+                    <div class="item-meta-lines">
+                        <span>Created by ${formatUserName(intake.createdBy)} · ${formatDate(intake.createdAt || intake.date)}</span>
+                        <span>Updated by ${formatUserName(intake.updatedBy || intake.createdBy)} · ${formatDate(intake.updatedAt || intake.createdAt || intake.date)}</span>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn-tertiary" data-action="edit-intake" data-id="${intake._id}">Edit</button>
+                        <button class="btn-tertiary" data-action="delete-intake" data-id="${intake._id}">Delete</button>
+                    </div>
                 </div>
             </div>
         `).join('');
     } catch (error) {
         console.error('Error loading intakes:', error);
     }
+}
+
+function handleIntakeAction(e) {
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const id = action.dataset.id;
+    if (action.dataset.action === 'edit-intake') {
+        openIntakeEditModal(id);
+    }
+    if (action.dataset.action === 'delete-intake') {
+        deleteIntake(id);
+    }
+}
+
+function openIntakeEditModal(intakeId) {
+    const intake = intakesCache.find(item => item._id === intakeId);
+    if (!intake) return;
+    editingIntakeId = intakeId;
+    document.getElementById('editIntakeDate').value = toDatetimeLocal(intake.date);
+    document.getElementById('editWaterAmount').value = intake.water?.amount || '';
+    document.getElementById('editFoodDesc').value = intake.food?.description || '';
+    document.getElementById('editUrineOutput').value = intake.urineOutput?.amount?.value || '';
+    document.getElementById('editUrineColor').value = intake.urineOutput?.color || '';
+    document.getElementById('editIntakeNotes').value = intake.notes || '';
+    openModal('intakeEditModal');
+}
+
+async function saveIntakeEdits(e) {
+    e.preventDefault();
+    if (!editingIntakeId) return;
+
+    const updateData = {
+        date: document.getElementById('editIntakeDate').value ? new Date(document.getElementById('editIntakeDate').value) : new Date(),
+        water: {
+            amount: parseInt(document.getElementById('editWaterAmount').value) || null
+        },
+        food: {
+            description: document.getElementById('editFoodDesc').value
+        },
+        urineOutput: {
+            amount: { value: parseInt(document.getElementById('editUrineOutput').value) || null },
+            color: document.getElementById('editUrineColor').value
+        },
+        notes: document.getElementById('editIntakeNotes').value
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/intakes/${editingIntakeId}`,
+            method: 'PUT',
+            body: updateData,
+            onSuccess: () => {
+                closeModal('intakeEditModal');
+                loadIntakes();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error updating intake: ' + error.message);
+    }
+}
+
+async function deleteIntake(intakeId) {
+    if (!confirm('Delete this intake record?')) return;
+    try {
+        await sendRequest({
+            url: `${API_BASE}/intakes/${intakeId}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                loadIntakes();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error deleting intake: ' + error.message);
+    }
+}
+
+// ========== SHIFTS ==========
+async function saveShift(e) {
+    e.preventDefault();
+    if (!currentPatientId) return;
+
+    const shiftData = {
+        patientId: currentPatientId,
+        staffName: document.getElementById('shiftStaffName').value,
+        role: document.getElementById('shiftRole').value,
+        shiftStart: document.getElementById('shiftStart').value ? new Date(document.getElementById('shiftStart').value) : null,
+        shiftEnd: document.getElementById('shiftEnd').value ? new Date(document.getElementById('shiftEnd').value) : null,
+        notes: document.getElementById('shiftNotes').value,
+        createdBy: currentUser.id
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/shifts`,
+            method: 'POST',
+            body: shiftData,
+            onSuccess: () => {
+                document.getElementById('shiftForm').reset();
+                loadShifts();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error saving shift: ' + error.message);
+    }
+}
+
+async function loadShifts() {
+    if (!currentPatientId) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/shifts?patientId=${currentPatientId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const shifts = await response.json();
+        shiftsCache = shifts;
+
+        const container = document.getElementById('shiftsList');
+        if (!container) return;
+        if (shifts.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🧑‍⚕️</div><p>No shifts added</p></div>';
+            return;
+        }
+
+        container.innerHTML = shifts.map(shift => `
+            <div class="list-item">
+                <div class="list-item-header">
+                    <div class="list-item-title">${shift.staffName}</div>
+                    <span class="list-item-badge badge-${shift.role === 'doctor' ? 'high' : 'medium'}">${shift.role.toUpperCase()}</span>
+                </div>
+                <div class="list-item-body">
+                    <p><strong>From:</strong> ${formatDate(shift.shiftStart)}</p>
+                    <p><strong>To:</strong> ${formatDate(shift.shiftEnd)}</p>
+                    ${shift.notes ? `<p><strong>Notes:</strong> ${shift.notes}</p>` : ''}
+                </div>
+                <div class="list-item-footer">
+                    <div class="item-meta-lines">
+                        <span>Created by ${formatUserName(shift.createdBy)} · ${formatDate(shift.createdAt)}</span>
+                        <span>Updated by ${formatUserName(shift.updatedBy || shift.createdBy)} · ${formatDate(shift.updatedAt || shift.createdAt)}</span>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn-tertiary" data-action="edit-shift" data-id="${shift._id}">Edit</button>
+                        <button class="btn-tertiary" data-action="delete-shift" data-id="${shift._id}">Delete</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading shifts:', error);
+    }
+}
+
+function handleShiftAction(e) {
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const shiftId = action.dataset.id;
+    if (action.dataset.action === 'edit-shift') {
+        openShiftEditModal(shiftId);
+    }
+    if (action.dataset.action === 'delete-shift') {
+        deleteShift(shiftId);
+    }
+}
+
+function openShiftEditModal(shiftId) {
+    const shift = shiftsCache.find(item => item._id === shiftId);
+    if (!shift) return;
+    editingShiftId = shiftId;
+    document.getElementById('editShiftStaffName').value = shift.staffName || '';
+    document.getElementById('editShiftRole').value = shift.role || 'doctor';
+    document.getElementById('editShiftStart').value = toDatetimeLocal(shift.shiftStart);
+    document.getElementById('editShiftEnd').value = toDatetimeLocal(shift.shiftEnd);
+    document.getElementById('editShiftNotes').value = shift.notes || '';
+    openModal('shiftEditModal');
+}
+
+async function saveShiftEdits(e) {
+    e.preventDefault();
+    if (!editingShiftId) return;
+
+    const updateData = {
+        staffName: document.getElementById('editShiftStaffName').value,
+        role: document.getElementById('editShiftRole').value,
+        shiftStart: document.getElementById('editShiftStart').value ? new Date(document.getElementById('editShiftStart').value) : null,
+        shiftEnd: document.getElementById('editShiftEnd').value ? new Date(document.getElementById('editShiftEnd').value) : null,
+        notes: document.getElementById('editShiftNotes').value
+    };
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/shifts/${editingShiftId}`,
+            method: 'PUT',
+            body: updateData,
+            onSuccess: () => {
+                closeModal('shiftEditModal');
+                loadShifts();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error updating shift: ' + error.message);
+    }
+}
+
+async function deleteShift(shiftId) {
+    if (!confirm('Delete this shift?')) return;
+
+    try {
+        await sendRequest({
+            url: `${API_BASE}/shifts/${shiftId}`,
+            method: 'DELETE',
+            body: {},
+            onSuccess: () => {
+                loadShifts();
+                loadDashboard();
+            }
+        });
+    } catch (error) {
+        alert('Error deleting shift: ' + error.message);
+    }
+}
+
+// ======== Shared actions metadata ========
+function formatUserName(user) {
+    if (!user) return 'Unknown';
+    if (typeof user === 'string') return user;
+    return user.name || user.email || 'Unknown';
+}
+
+function formatDate(value) {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleString();
+}
+
+function toDatetimeLocal(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = number => String(number).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function getDateValueOrNow(value) {
+    if (value) {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
 }
 
 // ========== AUDIT LOG ==========

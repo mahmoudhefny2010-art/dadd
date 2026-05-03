@@ -72,6 +72,10 @@
         <button id="mobileChromeToggle" class="mobile-toggle" type="button" aria-expanded="false">
             ☰ Menu
         </button>
+        <div id="offlineBanner" class="offline-banner" role="status" aria-live="polite">
+            <span id="offlineBannerText">You are offline. Changes will sync when online.</span>
+            <button id="syncNowBtn" class="btn-tertiary" type="button">Sync now</button>
+        </div>
         <!-- Header -->
         <header class="header">
             <div class="header-content">
@@ -99,6 +103,8 @@
                     <option value="">-- Select a Patient --</option>
                 </select>
                 <button id="addPatientBtn" class="btn-secondary">+ New Patient</button>
+                       <button id="editPatientBtn" class="btn-secondary" type="button">✏️ Edit</button>
+                       <button id="deletePatientBtn" class="btn-secondary" type="button">🗑 Delete</button>
             </div>
         </div>
 
@@ -112,6 +118,7 @@
                     <button class="nav-tab" data-tab="observations">📈 Observations</button>
                     <button class="nav-tab" data-tab="medications">💊 Medications</button>
                     <button class="nav-tab" data-tab="intakes">🥗 Intakes/Output</button>
+                       <button class="nav-tab" data-tab="shifts">🧑‍⚕️ Shifts</button>
                     <button class="nav-tab" data-tab="audit">📋 Audit Log</button>
                 </div>
 
@@ -128,6 +135,35 @@
                             <h3>Recent Activity</h3>
                             <div id="recentActivity" class="activity-list"></div>
                         </div>
+                        <div class="info-card">
+                            <h3>Today Summary</h3>
+                            <div id="dailySummary" class="activity-list"></div>
+                        </div>
+                        <div class="info-card">
+                            <h3>Today Reminders</h3>
+                            <div id="dashboardRemindersList" class="list-container compact"></div>
+                        </div>
+                        <div class="info-card">
+                            <h3>New Symptoms</h3>
+                            <form id="symptomsForm" class="compact-form">
+                                <div class="form-group">
+                                    <label for="symptomsDate">Date/Time</label>
+                                    <input type="datetime-local" id="symptomsDate">
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-row">
+                                        <label for="symptomsNotes">Notes</label>
+                                        <button class="dictation-btn" type="button" data-target="symptomsNotes">🎤</button>
+                                    </div>
+                                    <textarea id="symptomsNotes" placeholder="Describe new symptoms..."></textarea>
+                                </div>
+                                <button type="submit" class="btn-primary">Save Symptoms</button>
+                            </form>
+                        </div>
+                        <div class="info-card">
+                            <h3>Today Shifts</h3>
+                            <div id="dashboardShiftsList" class="list-container compact"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -140,7 +176,15 @@
                             <h3>Add Question</h3>
                             <form id="questionForm">
                                 <div class="form-group">
-                                    <label for="questionText">Question</label>
+                                    <label for="questionDate">Date/Time</label>
+                                    <input type="datetime-local" id="questionDate">
+                                </div>
+                                <div class="form-group">
+
+                                    <div class="label-row">
+                                        <label for="questionText">Question</label>
+                                        <button class="dictation-btn" type="button" data-target="questionText">🎤</button>
+                                    </div>
                                     <textarea id="questionText" required placeholder="Type your question for the doctor..."></textarea>
                                 </div>
                                 <div class="form-row">
@@ -176,6 +220,10 @@
                         <div class="form-section">
                             <h3>Record Observation</h3>
                             <form id="observationForm">
+                                <div class="form-group">
+                                    <label for="observationDate">Date/Time</label>
+                                    <input type="datetime-local" id="observationDate">
+                                </div>
                                 <div class="form-grid">
                                     <div class="form-group">
                                         <label for="bloodSugar">Blood Sugar (mg/dL)</label>
@@ -203,7 +251,10 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label for="observationNotes">Notes</label>
+                                    <div class="label-row">
+                                        <label for="observationNotes">Notes</label>
+                                        <button class="dictation-btn" type="button" data-target="observationNotes">🎤</button>
+                                    </div>
                                     <textarea id="observationNotes" placeholder="Additional observations..."></textarea>
                                 </div>
                                 <button type="submit" class="btn-primary">Save Observation</button>
@@ -225,6 +276,10 @@
                         <div class="form-section">
                             <h3>Add Medication</h3>
                             <form id="medicationForm">
+                                <div class="form-group">
+                                    <label for="medStartDate">Start Date</label>
+                                    <input type="datetime-local" id="medStartDate">
+                                </div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="medName">Medication Name</label>
@@ -260,6 +315,10 @@
                                     <label for="medPurpose">Purpose</label>
                                     <input type="text" id="medPurpose" placeholder="Why this medication">
                                 </div>
+                                <div class="form-group">
+                                    <label for="medSchedule">Schedule Times (HH:MM)</label>
+                                    <input type="text" id="medSchedule" placeholder="08:00, 14:00, 20:00">
+                                </div>
                                 <button type="submit" class="btn-primary">Add Medication</button>
                             </form>
                         </div>
@@ -275,6 +334,7 @@
                                     <button id="stopMedicationBtn" class="btn-secondary" type="button" disabled>⏹ Stop</button>
                                     <button id="replaceMedicationBtn" class="btn-secondary" type="button" disabled>🔁 Replace</button>
                                     <button id="checklistMedicationBtn" class="btn-secondary" type="button" disabled>✅ Checklist</button>
+                                    <button id="deleteMedicationBtn" class="btn-secondary" type="button" disabled>🗑 Delete</button>
                                 </div>
                             </div>
                         </div>
@@ -282,6 +342,11 @@
                         <div class="data-section">
                             <h3>Current Medications</h3>
                             <div id="medicationsList" class="list-container"></div>
+                        </div>
+
+                        <div class="data-section">
+                            <h3>Today Reminders</h3>
+                            <div id="medicationRemindersList" class="list-container"></div>
                         </div>
 
                         <div class="data-section medication-history">
@@ -335,7 +400,10 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label for="intakeNotes">Notes</label>
+                                    <div class="label-row">
+                                        <label for="intakeNotes">Notes</label>
+                                        <button class="dictation-btn" type="button" data-target="intakeNotes">🎤</button>
+                                    </div>
                                     <textarea id="intakeNotes" placeholder="Additional notes..."></textarea>
                                 </div>
                                 <button type="submit" class="btn-primary">Save Record</button>
@@ -345,6 +413,55 @@
                         <div class="data-section">
                             <h3>Record History</h3>
                             <div id="intakesList" class="list-container"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shifts Tab -->
+                <div id="shifts" class="tab-content">
+                    <div class="section-card">
+                        <h2>Doctors & Nurses Shifts</h2>
+
+                        <div class="form-section">
+                            <h3>Add Shift</h3>
+                            <form id="shiftForm">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="shiftStaffName">Staff Name</label>
+                                        <input type="text" id="shiftStaffName" required placeholder="Dr. Ahmed" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="shiftRole">Role</label>
+                                        <select id="shiftRole" required>
+                                            <option value="doctor">Doctor</option>
+                                            <option value="nurse">Nurse</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="shiftStart">Shift Start</label>
+                                        <input type="datetime-local" id="shiftStart" required />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="shiftEnd">Shift End</label>
+                                        <input type="datetime-local" id="shiftEnd" required />
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="label-row">
+                                        <label for="shiftNotes">Notes</label>
+                                        <button class="dictation-btn" type="button" data-target="shiftNotes">🎤</button>
+                                    </div>
+                                    <textarea id="shiftNotes" placeholder="Notes about the shift..."></textarea>
+                                </div>
+                                <button type="submit" class="btn-primary">Save Shift</button>
+                            </form>
+                        </div>
+
+                        <div class="data-section">
+                            <h3>Shift Schedule</h3>
+                            <div id="shiftsList" class="list-container"></div>
                         </div>
                     </div>
                 </div>
@@ -388,7 +505,10 @@
                     <input type="text" id="emergencyContact" placeholder="Name and phone">
                 </div>
                 <div class="form-group">
-                    <label for="medicalConditions">Medical Conditions</label>
+                    <div class="label-row">
+                        <label for="medicalConditions">Medical Conditions</label>
+                        <button class="dictation-btn" type="button" data-target="medicalConditions">🎤</button>
+                    </div>
                     <textarea id="medicalConditions" placeholder="Comma-separated list"></textarea>
                 </div>
                 <button type="submit" class="btn-primary">Save Patient</button>
@@ -402,6 +522,10 @@
             <span class="modal-close">&times;</span>
             <h2>Edit Medication</h2>
             <form id="medicationEditForm">
+                <div class="form-group">
+                    <label for="editMedStartDate">Start Date</label>
+                    <input type="datetime-local" id="editMedStartDate">
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="editMedName">Medication Name</label>
@@ -435,6 +559,10 @@
                 <div class="form-group">
                     <label for="editMedPurpose">Purpose</label>
                     <input type="text" id="editMedPurpose">
+                </div>
+                <div class="form-group">
+                    <label for="editMedSchedule">Schedule Times (HH:MM)</label>
+                    <input type="text" id="editMedSchedule" placeholder="08:00, 14:00, 20:00">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -524,6 +652,10 @@
                     <input type="text" id="replaceMedPurpose">
                 </div>
                 <div class="form-group">
+                    <label for="replaceMedSchedule">Schedule Times (HH:MM)</label>
+                    <input type="text" id="replaceMedSchedule" placeholder="08:00, 14:00, 20:00">
+                </div>
+                <div class="form-group">
                     <label for="replaceMedNotes">Notes</label>
                     <input type="text" id="replaceMedNotes">
                 </div>
@@ -555,6 +687,225 @@
                     <input type="text" id="checklistMedNotes" placeholder="Optional notes">
                 </div>
                 <button type="submit" class="btn-primary">Save Checklist Entry</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Patient Edit Modal -->
+    <div id="patientEditModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Edit Patient</h2>
+            <form id="patientEditForm">
+                <div class="form-group">
+                    <label for="editPatientName">Full Name *</label>
+                    <input type="text" id="editPatientName" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editPatientAge">Age</label>
+                        <input type="number" id="editPatientAge">
+                    </div>
+                    <div class="form-group">
+                        <label for="editPatientPhone">Phone</label>
+                        <input type="tel" id="editPatientPhone">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editEmergencyContact">Emergency Contact</label>
+                    <input type="text" id="editEmergencyContact">
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editMedicalConditions">Medical Conditions</label>
+                        <button class="dictation-btn" type="button" data-target="editMedicalConditions">🎤</button>
+                    </div>
+                    <textarea id="editMedicalConditions"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save Patient</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Question Edit Modal -->
+    <div id="questionEditModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Edit Question</h2>
+            <form id="questionEditForm">
+                <div class="form-group">
+                    <label for="editQuestionDate">Date/Time</label>
+                    <input type="datetime-local" id="editQuestionDate">
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editQuestionText">Question</label>
+                        <button class="dictation-btn" type="button" data-target="editQuestionText">🎤</button>
+                    </div>
+                    <textarea id="editQuestionText" required></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editQuestionCategory">Category</label>
+                        <input type="text" id="editQuestionCategory">
+                    </div>
+                    <div class="form-group">
+                        <label for="editQuestionPriority">Priority</label>
+                        <select id="editQuestionPriority">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editQuestionStatus">Status</label>
+                        <select id="editQuestionStatus">
+                            <option value="pending">Pending</option>
+                            <option value="answered">Answered</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editQuestionAnswer">Answer</label>
+                        <button class="dictation-btn" type="button" data-target="editQuestionAnswer">🎤</button>
+                    </div>
+                    <textarea id="editQuestionAnswer"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save Question</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Observation Edit Modal -->
+    <div id="observationEditModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Edit Observation</h2>
+            <form id="observationEditForm">
+                <div class="form-group">
+                    <label for="editObservationDate">Date/Time</label>
+                    <input type="datetime-local" id="editObservationDate">
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="editBloodSugar">Blood Sugar (mg/dL)</label>
+                        <input type="number" id="editBloodSugar" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBpSystolic">BP Systolic</label>
+                        <input type="number" id="editBpSystolic">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBpDiastolic">BP Diastolic</label>
+                        <input type="number" id="editBpDiastolic">
+                    </div>
+                    <div class="form-group">
+                        <label for="editOxygen">Oxygen Level (%)</label>
+                        <input type="number" id="editOxygen" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="editHeartRate">Heart Rate (bpm)</label>
+                        <input type="number" id="editHeartRate">
+                    </div>
+                    <div class="form-group">
+                        <label for="editTemperature">Temperature (°C)</label>
+                        <input type="number" id="editTemperature" step="0.1">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editObservationNotes">Notes</label>
+                        <button class="dictation-btn" type="button" data-target="editObservationNotes">🎤</button>
+                    </div>
+                    <textarea id="editObservationNotes"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save Observation</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Intake Edit Modal -->
+    <div id="intakeEditModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Edit Intake/Output</h2>
+            <form id="intakeEditForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editIntakeDate">Date/Time</label>
+                        <input type="datetime-local" id="editIntakeDate">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editWaterAmount">Water Intake (mL)</label>
+                        <input type="number" id="editWaterAmount">
+                    </div>
+                    <div class="form-group">
+                        <label for="editFoodDesc">Food Description</label>
+                        <input type="text" id="editFoodDesc">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editUrineOutput">Urine Output (mL)</label>
+                        <input type="number" id="editUrineOutput">
+                    </div>
+                    <div class="form-group">
+                        <label for="editUrineColor">Urine Color</label>
+                        <input type="text" id="editUrineColor">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editIntakeNotes">Notes</label>
+                        <button class="dictation-btn" type="button" data-target="editIntakeNotes">🎤</button>
+                    </div>
+                    <textarea id="editIntakeNotes"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save Intake</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Shift Edit Modal -->
+    <div id="shiftEditModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h2>Edit Shift</h2>
+            <form id="shiftEditForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editShiftStaffName">Staff Name</label>
+                        <input type="text" id="editShiftStaffName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editShiftRole">Role</label>
+                        <select id="editShiftRole" required>
+                            <option value="doctor">Doctor</option>
+                            <option value="nurse">Nurse</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editShiftStart">Shift Start</label>
+                        <input type="datetime-local" id="editShiftStart" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editShiftEnd">Shift End</label>
+                        <input type="datetime-local" id="editShiftEnd" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="editShiftNotes">Notes</label>
+                        <button class="dictation-btn" type="button" data-target="editShiftNotes">🎤</button>
+                    </div>
+                    <textarea id="editShiftNotes"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save Shift</button>
             </form>
         </div>
     </div>
