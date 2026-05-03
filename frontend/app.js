@@ -133,6 +133,10 @@ function setupEventListeners() {
     if (dashboardRemindersList) {
         dashboardRemindersList.addEventListener('click', handleReminderAction);
     }
+    const nextMedicationPanel = document.getElementById('nextMedicationPanel');
+    if (nextMedicationPanel) {
+        nextMedicationPanel.addEventListener('click', handleReminderAction);
+    }
 
     const syncNowBtn = document.getElementById('syncNowBtn');
     if (syncNowBtn) {
@@ -645,6 +649,7 @@ async function loadDashboard() {
         loadDailySummary();
         loadDashboardReminders();
         loadDashboardShifts();
+        loadNextMedication();
     } catch (error) {
         console.error('Error loading dashboard:', error);
     }
@@ -657,6 +662,19 @@ async function loadDashboardReminders() {
         renderMedicationReminders(meds, 'dashboardRemindersList');
     } catch (error) {
         console.error('Error loading reminders:', error);
+    }
+}
+
+async function loadNextMedication() {
+    if (!currentPatientId) return;
+    const container = document.getElementById('nextMedicationPanel');
+    if (!container) return;
+
+    try {
+        const meds = await fetchJsonWithCache(`summary-medications-${currentPatientId}`, `${API_BASE}/medications?patientId=${currentPatientId}`);
+        renderNextMedication(meds);
+    } catch (error) {
+        container.innerHTML = '<div class="empty-state compact"><p>Unable to load next medication.</p></div>';
     }
 }
 
@@ -1493,13 +1511,14 @@ function renderMedicationReminders(medications, containerId = 'medicationReminde
                 <div>
                     <div class="list-item-title">${reminder.name}</div>
                     <div class="list-item-meta">
+                        <span>Date: ${new Date().toLocaleDateString()}</span>
                         <span>Time: ${reminder.time}</span>
-                        <span class="status-pill status-${reminder.status}">${reminder.status}</span>
+                        <span class="status-pill status-${reminder.status}">${reminder.status === 'pending' ? 'not yet' : reminder.status}</span>
                     </div>
                 </div>
                 <div class="reminder-actions">
-                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-taken="true" ${reminder.status !== 'pending' ? 'disabled' : ''}>Taken</button>
-                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-taken="false" ${reminder.status !== 'pending' ? 'disabled' : ''}>Missed</button>
+                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-date="${buildDateFromTime(reminder.time).toISOString()}" data-taken="true" ${reminder.status !== 'pending' ? 'disabled' : ''}>Taken</button>
+                    <button class="btn-tertiary reminder-action" data-med-id="${reminder.id}" data-time="${reminder.time}" data-date="${buildDateFromTime(reminder.time).toISOString()}" data-taken="false" ${reminder.status !== 'pending' ? 'disabled' : ''}>Missed</button>
                 </div>
             </div>
         </div>
@@ -1512,12 +1531,77 @@ function handleReminderAction(e) {
     const medId = button.dataset.medId;
     const time = button.dataset.time;
     const taken = button.dataset.taken === 'true';
-    const date = buildDateFromTime(time);
+    const date = button.dataset.date ? new Date(button.dataset.date) : buildDateFromTime(time);
 
     submitChecklistEntry(medId, { date, time, taken, notes: '' }, () => {
         loadMedications();
         loadDashboard();
     });
+}
+
+function renderNextMedication(medications) {
+    const container = document.getElementById('nextMedicationPanel');
+    if (!container) return;
+
+    const nextDose = findNextMedicationDose(medications || []);
+    if (!nextDose) {
+        container.innerHTML = '<div class="empty-state compact"><p>No upcoming medication scheduled.</p></div>';
+        return;
+    }
+
+    const statusLabel = nextDose.status === 'pending' ? 'not yet' : nextDose.status;
+    container.innerHTML = `
+        <div class="list-item reminder-item">
+            <div class="list-item-header">
+                <div>
+                    <div class="list-item-title">${nextDose.name}</div>
+                    <div class="list-item-meta">
+                        <span>Date: ${nextDose.date.toLocaleDateString()}</span>
+                        <span>Time: ${nextDose.time}</span>
+                        <span class="status-pill status-${nextDose.status}">${statusLabel}</span>
+                    </div>
+                </div>
+                <div class="reminder-actions">
+                    <button class="btn-tertiary reminder-action" data-med-id="${nextDose.id}" data-time="${nextDose.time}" data-date="${nextDose.date.toISOString()}" data-taken="true" ${nextDose.status !== 'pending' ? 'disabled' : ''}>Taken</button>
+                    <button class="btn-tertiary reminder-action" data-med-id="${nextDose.id}" data-time="${nextDose.time}" data-date="${nextDose.date.toISOString()}" data-taken="false" ${nextDose.status !== 'pending' ? 'disabled' : ''}>Missed</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function findNextMedicationDose(medications) {
+    const now = new Date();
+    const candidates = [];
+
+    medications.forEach(med => {
+        if (med.status !== 'active') return;
+        const schedule = Array.isArray(med.schedule) ? med.schedule : [];
+        schedule.forEach(time => {
+            const doseDate = buildDateFromTime(time);
+            let nextDate = doseDate;
+            if (doseDate < now) {
+                nextDate = new Date(doseDate);
+                nextDate.setDate(nextDate.getDate() + 1);
+            }
+
+            const entry = (med.checklist || []).find(check => {
+                return check.date && isSameDay(new Date(check.date), nextDate) && check.time === time;
+            });
+
+            candidates.push({
+                id: med._id,
+                name: med.name,
+                time,
+                date: nextDate,
+                status: entry ? (entry.taken ? 'taken' : 'missed') : 'pending'
+            });
+        });
+    });
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.date - b.date);
+    return candidates[0];
 }
 
 function buildDateFromTime(time) {
